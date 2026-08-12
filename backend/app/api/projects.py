@@ -4,11 +4,13 @@ from typing import Optional, List
 from app.models.project import ProjectCreate, ProjectResponse, Project
 from app.repositories.storage import StorageRepository
 from app.services.pipeline import PipelineService
+from app.clients.gemini import GeminiClient
 from app.api.auth import get_current_user_email
 
 router = APIRouter()
 storage = StorageRepository()
-pipeline = PipelineService(storage)
+gemini_client = GeminiClient()
+pipeline = PipelineService(storage, gemini_client)
 
 
 class ProjectListResponse(BaseModel):
@@ -126,7 +128,7 @@ async def create_project(
         "book_text_path": book_text_path,
         "overall_status": "CREATED",
         "current_step": 0,
-        "step_state": None,
+        "step_states": {},
         "style": None,
         "characters": [],
         "chapters": []
@@ -218,7 +220,7 @@ async def trigger_step(project_id: str, step: str, request: Request):
         )
     
     try:
-        result = pipeline.execute_step(project_id, step, force_fail=False)
+        result = pipeline.execute_step(project_id, step)
         return result
     except ValueError as e:
         raise HTTPException(

@@ -61,7 +61,7 @@ class GeminiClient:
         prompt: str,
         model: Optional[str] = None,
         previous_interaction_id: Optional[str] = None
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Generate text response from Gemini
         
@@ -71,7 +71,7 @@ class GeminiClient:
             previous_interaction_id: Optional interaction ID for chat context
             
         Returns:
-            Generated text response
+            Tuple of (generated text response, interaction_id)
         """
         model_to_use = model or self.text_model
         
@@ -82,14 +82,14 @@ class GeminiClient:
                 input=prompt,
                 previous_interaction_id=previous_interaction_id
             )
-            return interaction.output_text
+            return interaction.output_text, interaction.id
         else:
             # Start new conversation
             interaction = self.client.interactions.create(
                 model=model_to_use,
                 input=prompt
             )
-            return interaction.output_text
+            return interaction.output_text, interaction.id
     
     def generate_structured_json(
         self,
@@ -97,7 +97,7 @@ class GeminiClient:
         schema: Dict[str, Any],
         model: Optional[str] = None,
         previous_interaction_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str]:
         """
         Generate structured JSON response from Gemini
         
@@ -108,7 +108,7 @@ class GeminiClient:
             previous_interaction_id: Optional interaction ID for chat context
             
         Returns:
-            Parsed JSON response matching schema
+            Tuple of (parsed JSON response matching schema, interaction_id)
         """
         model_to_use = model or self.text_model
         
@@ -134,7 +134,7 @@ class GeminiClient:
                 }
             )
         
-        return json.loads(interaction.output_text)
+        return json.loads(interaction.output_text), interaction.id
     
     def generate_image(
         self,
@@ -142,7 +142,7 @@ class GeminiClient:
         aspect_ratio: str = "9:16",
         previous_interaction_id: Optional[str] = None,
         model: Optional[str] = None
-    ) -> Any:
+    ) -> tuple[Any, str]:
         """
         Generate image from Gemini (PAID-ONLY)
         
@@ -157,7 +157,7 @@ class GeminiClient:
             model: Image model to use (defaults to configured image model)
             
         Returns:
-            Generated image part
+            Tuple of (generated image part, interaction_id)
             
         Raises:
             Exception: If billing is not enabled or quota exceeded
@@ -201,7 +201,7 @@ class GeminiClient:
                 if step.type == "model_output" and step.content:
                     for content in reversed(step.content):
                         if content.type == "image":
-                            return content
+                            return content, interaction.id
             
             raise Exception("No image generated in response")
             
