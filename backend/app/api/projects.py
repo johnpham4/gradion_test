@@ -3,10 +3,12 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.models.project import ProjectCreate, ProjectResponse, Project
 from app.services.storage import StorageService
+from app.services.pipeline import PipelineService
 from app.api.auth import get_current_user_email
 
 router = APIRouter()
 storage = StorageService()
+pipeline = PipelineService(storage)
 
 
 class ProjectListResponse(BaseModel):
@@ -179,3 +181,139 @@ async def get_project(project_id: str, request: Request):
         project["book_text"] = book_text
     
     return Project(**project)
+
+
+@router.post("/projects/{project_id}/steps/{step}")
+async def trigger_step(project_id: str, step: str, request: Request):
+    """Trigger execution of a pipeline step"""
+    session_token = get_session_token(request)
+    user_email = get_current_user_email(session_token)
+    
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check ownership
+    if project.get("user_email") != user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Validate step name
+    valid_steps = ["STYLE", "CHARACTERS", "PORTRAITS", "CHAPTERS", "ILLUSTRATIONS"]
+    if step not in valid_steps:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid step. Must be one of: {', '.join(valid_steps)}"
+        )
+    
+    try:
+        result = pipeline.execute_step(project_id, step, force_fail=False)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Step execution failed: {str(e)}"
+        )
+
+
+@router.get("/projects/{project_id}/status")
+async def get_pipeline_status(project_id: str, request: Request):
+    """Get current pipeline status for a project"""
+    session_token = get_session_token(request)
+    user_email = get_current_user_email(session_token)
+    
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check ownership
+    if project.get("user_email") != user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Detect stranded steps
+    stranded_info = pipeline.detect_and_recover_stranded(project_id)
+    
+    return {
+        "project_id": project_id,
+        "current_step": project.get("current_step", 0),
+        "overall_status": project.get("overall_status", "CREATED"),
+        "step_state": project.get("step_state"),
+        "stranded_info": stranded_info
+    }
+
+
+@router.post("/projects/{project_id}/steps/{step}/retry")
+async def retry_step(project_id: str, step: str, request: Request):
+    """Retry a FAILED or STRANDED step"""
+    session_token = get_session_token(request)
+    user_email = get_current_user_email(session_token)
+    
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    project = storage.get_project(project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check ownership
+    if project.get("user_email") != user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Validate step name
+    valid_steps = ["STYLE", "CHARACTERS", "PORTRAITS", "CHAPTERS", "ILLUSTRATIONS"]
+    if step not in valid_steps:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid step. Must be one of: {', '.join(valid_steps)}"
+        )
+    
+    try:
+        result = pipeline.retry_step(project_id, step)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Step retry failed: {str(e)}"
+        )
