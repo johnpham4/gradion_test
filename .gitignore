@@ -39,10 +39,7 @@ ENV/
 .env.local
 
 # Data storage
-data/users/
-data/projects/
-data/files/
-data/locks/
+data/
 
 # Next.js
 .next/
