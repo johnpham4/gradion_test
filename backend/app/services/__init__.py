@@ -1,4 +1,4 @@
-from .storage import StorageService
+from app.repositories.storage import StorageRepository
 from .pipeline import PipelineService
 
-__all__ = ["StorageService", "PipelineService"]
+__all__ = ["StorageRepository", "PipelineService"]

@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from app.api.auth import sessions, storage
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 from datetime import datetime
 
 
@@ -20,7 +20,7 @@ def clear_data():
 @pytest.fixture
 def test_storage():
     """Create test storage instance"""
-    return StorageService()
+    return StorageRepository()
 
 
 @pytest.fixture

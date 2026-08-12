@@ -1,12 +1,12 @@
 from typing import Optional, Dict, Any
 from datetime import datetime
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 
 
 class PipelineService:
     """Service for managing pipeline execution with deterministic mock executors"""
     
-    def __init__(self, storage: StorageService):
+    def __init__(self, storage: StorageRepository):
         self.storage = storage
         self.timeout_seconds = 300  # 5 minutes default timeout
     
@@ -71,16 +71,14 @@ class PipelineService:
         if not project:
             raise ValueError("Project not found")
         
-        step_state = project.get("step_state")
+        step_states = project.get("step_states", {})
+        step_state = step_states.get(step)
         if not step_state:
-            raise ValueError("No step state found")
+            raise ValueError(f"No step state found for {step}")
         
         current_status = step_state.get("status")
         if current_status not in ["FAILED", "STRANDED"]:
             raise ValueError(f"Cannot retry step with status {current_status}")
-        
-        if step_state.get("step") != step:
-            raise ValueError(f"Current step is {step_state.get('step')}, cannot retry {step}")
         
         # Execute the step again
         return self.execute_step(project_id, step, force_fail=False)

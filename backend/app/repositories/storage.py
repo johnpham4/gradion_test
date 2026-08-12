@@ -7,7 +7,7 @@ from datetime import datetime
 import secrets
 
 
-class StorageService:
+class StorageRepository:
     def __init__(self, base_path: str = "data"):
         self.base_path = Path(base_path)
         self.users_path = self.base_path / "users"

@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from app.api.auth import sessions, storage
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 
 
 client = TestClient(app)
@@ -19,7 +19,7 @@ def clear_sessions():
 @pytest.fixture
 def test_storage():
     """Create test storage instance"""
-    storage = StorageService()
+    storage = StorageRepository()
     # Clear existing test data
     if storage.get_user("test@example.com"):
         import os

@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from app.api.auth import sessions, storage
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 from app.services.pipeline import PipelineService
 import secrets
 from datetime import datetime, timedelta
@@ -22,7 +22,7 @@ def clear_sessions():
 @pytest.fixture
 def test_storage():
     """Create test storage instance"""
-    storage_instance = StorageService()
+    storage_instance = StorageRepository()
     # Clear existing test data
     if storage_instance.get_user("pipeline@example.com"):
         import os
@@ -116,7 +116,7 @@ def test_multi_step_state_persistence(test_project, test_storage):
         json.dump(project, f, indent=2)
     
     # Reload and verify both steps persisted
-    new_storage = StorageService()
+    new_storage = StorageRepository()
     reloaded_project = new_storage.get_project(project_id)
     assert reloaded_project["step_states"]["STYLE"]["status"] == "COMPLETED"
     assert reloaded_project["step_states"]["CHARACTERS"]["status"] == "COMPLETED"
@@ -315,7 +315,7 @@ def test_state_persistence_after_reload(test_project, test_storage):
     test_storage.atomic_mark_completed(project_id, "STYLE", {"style": "watercolor"})
     
     # Create new storage instance (simulating reload)
-    new_storage = StorageService()
+    new_storage = StorageRepository()
     
     # Check state persisted
     project = new_storage.get_project(project_id)

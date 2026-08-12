@@ -2,12 +2,12 @@ from fastapi import APIRouter, HTTPException, status, Request, UploadFile, File,
 from pydantic import BaseModel
 from typing import Optional, List
 from app.models.project import ProjectCreate, ProjectResponse, Project
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 from app.services.pipeline import PipelineService
 from app.api.auth import get_current_user_email
 
 router = APIRouter()
-storage = StorageService()
+storage = StorageRepository()
 pipeline = PipelineService(storage)
 
 

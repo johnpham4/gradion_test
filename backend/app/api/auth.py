@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Response, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.models.user import UserCreate, UserResponse
-from app.services.storage import StorageService
+from app.repositories.storage import StorageRepository
 import secrets
 
 router = APIRouter()
-storage = StorageService()
+storage = StorageRepository()
 
 
 class SignInRequest(BaseModel):
