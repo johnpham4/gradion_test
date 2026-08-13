@@ -277,6 +277,42 @@ def test_stranded_step_detection(test_project, test_storage):
     assert project["step_states"]["STYLE"]["status"] == "STRANDED"
 
 
+def test_get_project_detects_stranded_steps(test_project, test_storage):
+    """Test that GET /projects/{id} marks long-RUNNING steps as STRANDED"""
+    project_id = test_project["project_id"]
+    user_email = test_project["data"]["user_email"]
+    import secrets
+    from app.api.auth import sessions
+    session_token = secrets.token_urlsafe(32)
+    sessions[session_token] = user_email
+
+    # Set step to RUNNING with an old timestamp (> 5 min timeout)
+    import json
+    old_time = datetime.utcnow() - timedelta(seconds=400)
+    project = test_storage.get_project(project_id)
+    project["step_states"] = {
+        "STYLE": {
+            "status": "RUNNING",
+            "started_at": old_time.isoformat(),
+            "completed_at": None,
+            "error_message": None,
+            "result": None
+        }
+    }
+    project_path = test_storage._get_project_path(project_id)
+    with open(project_path, 'w') as f:
+        json.dump(project, f, indent=2)
+
+    response = client.get(
+        f"/api/projects/{project_id}",
+        cookies={"session_token": session_token}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["step_states"]["STYLE"]["status"] == "STRANDED"
+
+
 def test_stranded_step_recovery(test_project, test_storage):
     """Test recovery of a stranded step"""
     project_id = test_project["project_id"]

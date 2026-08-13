@@ -209,6 +209,11 @@ async def get_project(project_id: str, request: Request):
             detail="Access denied"
         )
     
+    # Detect stranded steps (RUNNING too long) so the UI shows the
+    # Recover affordance instead of "Running..." forever.
+    storage.detect_stranded_steps(project_id, timeout_seconds=300)
+    project = storage.get_project(project_id)
+    
     # Add book text content to response
     book_text = storage.get_book_text(project_id)
     if book_text:

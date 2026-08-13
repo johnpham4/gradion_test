@@ -45,16 +45,16 @@ What we deliberately do **not** test:
 
 ```
 $ pytest -q
-collected 63 items
+collected 64 items
 
-tests\test_auth.py .......                                       [ 11%]
+tests\test_auth.py .......                                       [ 10%]
 tests\test_health.py ..                                          [ 14%]
 tests\test_image_providers.py ......                             [ 23%]
-tests\test_pipeline.py ............................               [ 68%]
+tests\test_pipeline.py .............................               [ 68%]
 tests\test_projects.py .............                             [ 88%]
 tests\test_step_results.py .......                               [100%]
 
-======================= 63 passed, 8 warnings in 3.41s ========================
+======================= 64 passed, 9 warnings in 3.59s ========================
 ```
 
 The 8 warnings are starlette `DeprecationWarning`s about per-request cookies in
