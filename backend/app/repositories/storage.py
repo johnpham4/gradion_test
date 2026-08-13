@@ -2,7 +2,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Callable
 from datetime import datetime
 import secrets
 
@@ -31,19 +31,20 @@ class StorageRepository:
         return self.locks_path / f"{resource_id}.lock"
     
     def _with_lock(self, resource_id: str, func):
-        """Execute function with file-based write lock (cross-platform)"""
-        import threading
-        
-        # Use in-memory locks for simplicity in this assessment scope
-        # For production, use proper file locking libraries
-        if not hasattr(self, '_locks'):
+        """Execute function with a per-resource in-process lock.
+
+        Prevents two concurrent triggers of the same step from both passing the
+        RUNNING check (the no-duplicate-calls requirement). One uvicorn process
+        is a single worker, so an in-process lock is sufficient here.
+        """
+        if not hasattr(self, "_locks"):
             self._locks = {}
             self._lock_lock = threading.Lock()
-        
+
         with self._lock_lock:
             if resource_id not in self._locks:
-                self._locks[resource_id] = threading.Lock()
-        
+                self._locks[resource_id] = threading.RLock()
+
         lock = self._locks[resource_id]
         with lock:
             return func()
@@ -79,7 +80,7 @@ class StorageRepository:
             with open(user_path, 'w') as f:
                 json.dump(user_data, f, indent=2)
             return user_data
-        
+
         return self._with_lock(email, _update)
     
     def create_project(self, project_id: str, project_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -112,7 +113,7 @@ class StorageRepository:
             with open(project_path, 'w') as f:
                 json.dump(project_data, f, indent=2)
             return project_data
-        
+
         return self._with_lock(project_id, _update)
     
     def get_user_projects(self, email: str) -> list:
@@ -131,17 +132,14 @@ class StorageRepository:
     
     def add_project_to_user(self, email: str, project_id: str) -> Dict[str, Any]:
         """Add project ID to user's project list"""
-        def _add():
-            user = self.get_user(email)
-            if not user:
-                raise ValueError(f"User {email} not found")
-            
-            if project_id not in user.get("projects", []):
-                user["projects"].append(project_id)
-            
-            return self.update_user(email, user)
+        user = self.get_user(email)
+        if not user:
+            raise ValueError(f"User {email} not found")
         
-        return self._with_lock(email, _add)
+        if project_id not in user.get("projects", []):
+            user["projects"].append(project_id)
+        
+        return self.update_user(email, user)
     
     def save_book_text(self, project_id: str, book_text: str) -> str:
         """Save book text to filesystem"""
@@ -173,26 +171,22 @@ class StorageRepository:
     def update_step_state(self, project_id: str, step: str, status: str, 
                           error_message: Optional[str] = None, result: Optional[Any] = None) -> Dict[str, Any]:
         """Update step state for a project (DEPRECATED - use atomic transition methods)"""
-        # This method is kept for backward compatibility but should not be used for new code
-        def _update_step():
-            project = self.get_project(project_id)
-            if not project:
-                raise ValueError(f"Project {project_id} not found")
-            
-            from datetime import datetime
-            step_state = {
-                "step": step,
-                "status": status,
-                "started_at": datetime.utcnow().isoformat() if status == "RUNNING" else None,
-                "completed_at": datetime.utcnow().isoformat() if status == "COMPLETED" else None,
-                "error_message": error_message,
-                "result": result
-            }
-            
-            project["step_state"] = step_state
-            return self.update_project(project_id, project)
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
         
-        return self._with_lock(project_id, _update_step)
+        from datetime import datetime
+        step_state = {
+            "step": step,
+            "status": status,
+            "started_at": datetime.utcnow().isoformat() if status == "RUNNING" else None,
+            "completed_at": datetime.utcnow().isoformat() if status == "COMPLETED" else None,
+            "error_message": error_message,
+            "result": result
+        }
+        
+        project["step_state"] = step_state
+        return self.update_project(project_id, project)
     
     def get_step_state(self, project_id: str) -> Optional[Dict[str, Any]]:
         """Get current step state for a project (DEPRECATED - use get_step_states)"""
@@ -214,19 +208,19 @@ class StorageRepository:
             project = self.get_project(project_id)
             if not project:
                 raise ValueError(f"Project {project_id} not found")
-            
+
             # Define step order
             steps = ["STYLE", "CHARACTERS", "PORTRAITS", "CHAPTERS", "ILLUSTRATIONS"]
             if step not in steps:
                 raise ValueError(f"Invalid step name: {step}")
-            
+
             step_index = steps.index(step)
             current_step = project.get("current_step", 0)
-            
+
             # Check ordering
             if step_index > current_step:
                 raise ValueError(f"Cannot execute {step} before completing step {steps[current_step]}")
-            
+
             # Check state
             step_states = project.get("step_states", {})
             step_state = step_states.get(step)
@@ -236,11 +230,11 @@ class StorageRepository:
                     raise ValueError(f"Step {step} is already running")
                 if current_status == "COMPLETED" and step_index == current_step:
                     raise ValueError(f"Step {step} is already completed")
-            
+
             # Initialize step_states if not present
             if "step_states" not in project:
                 project["step_states"] = {}
-            
+
             # Transition to RUNNING
             from datetime import datetime
             project["step_states"][step] = {
@@ -250,14 +244,14 @@ class StorageRepository:
                 "error_message": None,
                 "result": None
             }
-            
+
             # Write to file directly (no nested lock)
             project_path = self._get_project_path(project_id)
             with open(project_path, 'w') as f:
                 json.dump(project, f, indent=2)
-            
+
             return project
-        
+
         return self._with_lock(project_id, _transition)
     
     def atomic_mark_completed(self, project_id: str, step: str, result: Any) -> Dict[str, Any]:
@@ -266,11 +260,11 @@ class StorageRepository:
             project = self.get_project(project_id)
             if not project:
                 raise ValueError(f"Project {project_id} not found")
-            
+
             # Initialize step_states if not present
             if "step_states" not in project:
                 project["step_states"] = {}
-            
+
             # Mark as COMPLETED
             from datetime import datetime
             project["step_states"][step] = {
@@ -280,24 +274,24 @@ class StorageRepository:
                 "error_message": None,
                 "result": result
             }
-            
+
             # Advance current_step
             steps = ["STYLE", "CHARACTERS", "PORTRAITS", "CHAPTERS", "ILLUSTRATIONS"]
             step_index = steps.index(step)
             project["current_step"] = step_index + 1
-            
+
             # Update overall_status
             statuses = ["CREATED", "STYLE_SET", "CHARACTERS_GENERATED", "PORTRAITS_GENERATED", "CHAPTERS_GENERATED", "DONE"]
             if project["current_step"] < len(statuses):
                 project["overall_status"] = statuses[project["current_step"]]
-            
+
             # Write to file directly (no nested lock)
             project_path = self._get_project_path(project_id)
             with open(project_path, 'w') as f:
                 json.dump(project, f, indent=2)
-            
+
             return project
-        
+
         return self._with_lock(project_id, _mark_complete)
     
     def atomic_mark_failed(self, project_id: str, step: str, error_message: str) -> Dict[str, Any]:
@@ -306,11 +300,11 @@ class StorageRepository:
             project = self.get_project(project_id)
             if not project:
                 raise ValueError(f"Project {project_id} not found")
-            
+
             # Initialize step_states if not present
             if "step_states" not in project:
                 project["step_states"] = {}
-            
+
             # Mark as FAILED
             from datetime import datetime
             project["step_states"][step] = {
@@ -320,17 +314,55 @@ class StorageRepository:
                 "error_message": error_message,
                 "result": None
             }
-            
+
             # Do NOT advance current_step on failure
-            
+
             # Write to file directly (no nested lock)
             project_path = self._get_project_path(project_id)
             with open(project_path, 'w') as f:
                 json.dump(project, f, indent=2)
-            
+
             return project
-        
+
         return self._with_lock(project_id, _mark_failed)
+
+    def update_step_result(self, project_id: str, step: str, result: Any) -> Dict[str, Any]:
+        """Persist partial step results while a step is RUNNING (for per-item progress)"""
+        def _update():
+            project = self.get_project(project_id)
+            if not project:
+                raise ValueError(f"Project {project_id} not found")
+
+            step_states = project.setdefault("step_states", {})
+            if step not in step_states:
+                raise ValueError(f"No step state found for {step}")
+
+            step_states[step]["result"] = result
+
+            project_path = self._get_project_path(project_id)
+            with open(project_path, 'w') as f:
+                json.dump(project, f, indent=2)
+
+            return project
+
+        return self._with_lock(project_id, _update)
+
+    def mutate_project(self, project_id: str, mutate: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Dict[str, Any]:
+        """Read-modify-write a project atomically (single lock)"""
+        def _mutate():
+            project = self.get_project(project_id)
+            if not project:
+                raise ValueError(f"Project {project_id} not found")
+
+            project = mutate(project)
+
+            project_path = self._get_project_path(project_id)
+            with open(project_path, 'w') as f:
+                json.dump(project, f, indent=2)
+
+            return project
+
+        return self._with_lock(project_id, _mutate)
     
     def can_execute_step(self, project_id: str, step: str) -> Tuple[bool, str]:
         """Check if a step can be executed (ordering + state validation)"""
@@ -385,20 +417,12 @@ class StorageRepository:
                 elapsed = (datetime.utcnow() - start_time).total_seconds()
                 if elapsed > timeout_seconds:
                     # Mark as stranded
-                    def _mark_stranded():
-                        project = self.get_project(project_id)
-                        if project and project.get("step_states", {}).get(step_name):
-                            project["step_states"][step_name]["status"] = "STRANDED"
-                            project["step_states"][step_name]["error_message"] = f"Step stranded after {int(elapsed)} seconds"
-                            # Write to file directly (no nested lock)
-                            project_path = self._get_project_path(project_id)
-                            with open(project_path, 'w') as f:
-                                json.dump(project, f, indent=2)
-                            return project
-                        return project
-                    
-                    self._with_lock(project_id, _mark_stranded)
-                    stranded_steps.append(step_name)
+                    project = self.get_project(project_id)
+                    if project and project.get("step_states", {}).get(step_name):
+                        project["step_states"][step_name]["status"] = "STRANDED"
+                        project["step_states"][step_name]["error_message"] = f"Step stranded after {int(elapsed)} seconds"
+                        self.update_project(project_id, project)
+                        stranded_steps.append(step_name)
             except:
                 pass
         

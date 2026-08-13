@@ -1,14 +1,15 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
 class StepState(BaseModel):
     step: str
     status: str  # PENDING, RUNNING, COMPLETED, FAILED, STRANDED
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
     error_message: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None  # Step execution result
 
 
 class Character(BaseModel):
@@ -34,7 +35,8 @@ class Project(BaseModel):
     book_text: Optional[str] = None  # Included in GET response for display
     overall_status: str = "CREATED"  # CREATED, STYLE_SET, CHARACTERS_GENERATED, PORTRAITS_GENERATED, CHAPTERS_GENERATED, DONE
     current_step: int = 0
-    step_state: Optional[StepState] = None
+    step_states: Dict[str, StepState] = {}  # All step states with results
+    step_state: Optional[StepState] = None  # Legacy field for backward compatibility
     style: Optional[str] = None
     characters: List[Character] = []
     chapters: List[Chapter] = []
