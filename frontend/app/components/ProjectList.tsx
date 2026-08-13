@@ -37,29 +37,15 @@ export default function ProjectList({ onSelectProject, onNewProject, onSignOut, 
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'CREATED':
-        return 'bg-gray-100 text-gray-800';
-      case 'IN_PROGRESS':
-        return 'bg-blue-100 text-blue-800';
-      case 'DONE':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+    if (status === 'CREATED') return 'bg-gray-100 text-gray-800';
+    if (status === 'DONE') return 'bg-green-100 text-green-800';
+    return 'bg-blue-100 text-blue-800';
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'CREATED':
-        return 'Draft';
-      case 'IN_PROGRESS':
-        return 'In Progress';
-      case 'DONE':
-        return 'Done';
-      default:
-        return status;
-    }
+    if (status === 'CREATED') return 'Draft';
+    if (status === 'DONE') return 'Done';
+    return 'In Progress';
   };
 
   const getProgressSegments = (currentStep: number) => {
@@ -137,12 +123,11 @@ export default function ProjectList({ onSelectProject, onNewProject, onSignOut, 
 
           {!loading && !error && projects.length > 0 && (
             <div className="space-y-3">
-              {projects.map((project, index) => (
+              {projects.map((project) => (
                 <div
                   key={project.id}
                   onClick={() => onSelectProject(project)}
                   className="border border-gray-200 rounded-lg p-5 hover:border-orange-300 hover:shadow-md cursor-pointer transition"
-                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1 min-w-0">

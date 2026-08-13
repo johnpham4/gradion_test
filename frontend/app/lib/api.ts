@@ -116,24 +116,11 @@ export const api = {
     return handleResponse(response);
   },
 
-  // Health check
-  async healthCheck(): Promise<{ status: string; timestamp: string; version: string }> {
-    const response = await fetch(API_URL + '/api/health');
-    return handleResponse(response);
-  },
-
   // Pipeline endpoints
   async triggerStep(projectId: string, step: string, userStyle?: string): Promise<{ status: string; result: Record<string, unknown> }> {
     const url = API_URL + '/api/projects/' + projectId + '/steps/' + step + (userStyle ? '?user_style=' + encodeURIComponent(userStyle) : '');
     const response = await fetch(url, {
       method: 'POST',
-      credentials: 'include',
-    });
-    return handleResponse(response);
-  },
-
-  async getPipelineStatus(projectId: string): Promise<Record<string, unknown>> {
-    const response = await fetch(API_URL + '/api/projects/' + projectId + '/status', {
       credentials: 'include',
     });
     return handleResponse(response);

@@ -344,6 +344,9 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
                               <p className='text-sm text-gray-600 mt-1'>{portrait.prompt}</p>
                               {imageUrl ? (
                                 <div className='mt-3'>
+                                  {/* Images come from the backend with a session cookie; next/image
+                                      would bypass the cookie, so a plain img is required here. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img
                                     src={imageUrl}
                                     alt={`Portrait of ${portrait.name}`}
@@ -384,6 +387,9 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
                               <p className='text-sm text-gray-600 mt-1'>{illustration.prompt}</p>
                               {imageUrl ? (
                                 <div className='mt-3'>
+                                  {/* Images come from the backend with a session cookie; next/image
+                                      would bypass the cookie, so a plain img is required here. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img
                                     src={imageUrl}
                                     alt={`Illustration of ${illustration.name}`}
