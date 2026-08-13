@@ -1,41 +1,43 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import SignIn from './components/SignIn';
 import ProjectList from './components/ProjectList';
 import NewProject from './components/NewProject';
 import ProjectDetail from './components/ProjectDetail';
-import { api, ApiError } from './lib/api';
+import { api, Project } from './lib/api';
 
 type View = 'signin' | 'projects' | 'new-project' | 'project-detail';
 
 export default function Home() {
   const [view, setView] = useState<View>('signin');
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [selectedProject, setSelectedProject] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check if user is already authenticated by trying to fetch projects
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       setLoading(true);
       await api.getProjects();
-      // If successful, user is authenticated, but we need user info
-      // For now, we'll stay on signin since we don't have a get current user endpoint
-      setView('signin');
-    } catch (err) {
+      // If successful, user is authenticated
+      // We'll use the user info from sign-in response stored in session
+      // For now, just set view to projects
+      setView('projects');
+    } catch {
       // Not authenticated, stay on signin
       setView('signin');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleSignIn = (user: any) => {
+  useEffect(() => {
+    // Skip auth check for now - always start on signin page
+    setView('signin');
+    setLoading(false);
+  }, []);
+
+  const handleSignIn = (user: { email: string; name: string }) => {
     setCurrentUser(user);
     setView('projects');
   };
@@ -51,7 +53,7 @@ export default function Home() {
     }
   };
 
-  const handleSelectProject = (project: any) => {
+  const handleSelectProject = (project: Project) => {
     setSelectedProject(project);
     setView('project-detail');
   };
@@ -60,7 +62,7 @@ export default function Home() {
     setView('new-project');
   };
 
-  const handleProjectCreated = (project: any) => {
+  const handleProjectCreated = (project: Project) => {
     setSelectedProject(project);
     setView('project-detail');
   };

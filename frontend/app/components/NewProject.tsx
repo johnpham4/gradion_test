@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { api, CreateProjectRequest, ApiError } from '../lib/api';
+import { api, CreateProjectRequest, ApiError, Project } from '../lib/api';
 
 interface NewProjectProps {
   onCancel: () => void;
-  onProjectCreated: (project: any) => void;
+  onProjectCreated: (project: Project) => void;
 }
 
 export default function NewProject({ onCancel, onProjectCreated }: NewProjectProps) {
@@ -55,7 +55,7 @@ export default function NewProject({ onCancel, onProjectCreated }: NewProjectPro
       const request: CreateProjectRequest = {
         title: title.trim(),
         book_text: useFileUpload ? undefined : bookText.trim(),
-        file: useFileUpload ? file : undefined,
+        file: useFileUpload ? file || undefined : undefined,
       };
 
       const response = await api.createProject(request);
@@ -74,6 +74,11 @@ export default function NewProject({ onCancel, onProjectCreated }: NewProjectPro
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      if (!selectedFile.name.endsWith('.txt')) {
+        setError('Only .txt files are supported');
+        setFile(null);
+        return;
+      }
       setFile(selectedFile);
       setError(null);
     }

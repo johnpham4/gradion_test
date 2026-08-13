@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api, Project, ApiError } from '../lib/api';
 
 interface ProjectDetailProps {
@@ -8,29 +8,35 @@ interface ProjectDetailProps {
   onBack: () => void;
 }
 
+interface NamedResult {
+  name: string;
+  prompt: string;
+}
+
+interface PortraitResult extends NamedResult {
+  portrait_path?: string | null;
+}
+
+interface IllustrationResult extends NamedResult {
+  illustration_path?: string | null;
+}
+
 export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
   const [bookText, setBookText] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pipelineStatus, setPipelineStatus] = useState<any>(null);
+  const [projectData, setProjectData] = useState<Project>(project);
   const [triggeringStep, setTriggeringStep] = useState<string | null>(null);
+  const [userStyle, setUserStyle] = useState<string>('');
+  const [polling, setPolling] = useState(false);
 
-  useEffect(() => {
-    if (project.book_text) {
-      setBookText(project.book_text);
-      setLoading(false);
-    } else {
-      loadBookText();
-    }
-    loadPipelineStatus();
-  }, [project]);
-
-  const loadBookText = async () => {
+  const loadBookText = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const fullProject = await api.getProject(project.id);
       setBookText(fullProject.book_text || '');
+      setProjectData(fullProject);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -40,29 +46,77 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [project.id]);
 
-  const loadPipelineStatus = async () => {
+  const loadProjectData = useCallback(async () => {
     try {
-      const status = await api.getPipelineStatus(project.id);
-      setPipelineStatus(status);
+      const updated = await api.getProject(project.id);
+      setProjectData(updated);
     } catch (err) {
-      console.error('Failed to load pipeline status:', err);
+      console.error('Failed to load project data:', err);
     }
-  };
+  }, [project.id]);
+
+  useEffect(() => {
+    if (project.book_text) {
+      setBookText(project.book_text);
+      setLoading(false);
+    } else {
+      loadBookText();
+    }
+    loadProjectData();
+  }, [project, loadBookText, loadProjectData]);
+
+  // Poll for project updates when a step is running
+  useEffect(() => {
+    if (polling) {
+      const interval = setInterval(async () => {
+        try {
+          const updated = await api.getProject(project.id);
+          setProjectData(updated);
+
+          // Check if any step is still running
+          const hasRunningStep = Object.values(updated.step_states || {}).some(
+            (state: { status: string }) => state.status === 'RUNNING'
+          );
+
+          if (!hasRunningStep) {
+            setPolling(false);
+          }
+        } catch (err) {
+          console.error('Polling error:', err);
+          setPolling(false);
+        }
+      }, 2000); // Poll every 2 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [polling, project.id]);
 
   const triggerStep = async (step: string) => {
     try {
       setTriggeringStep(step);
       setError(null);
-      await api.triggerStep(project.id, step);
-      await loadPipelineStatus();
+      // Start polling BEFORE the trigger call so the RUNNING state and any
+      // partial results (persisted by the backend) show up during long steps.
+      setPolling(true);
+
+      // For STYLE step, pass user style if provided
+      if (step === 'STYLE' && userStyle.trim()) {
+        await api.triggerStep(project.id, step, userStyle.trim());
+      } else {
+        await api.triggerStep(project.id, step);
+      }
+
+      // Refresh immediately so results render without waiting for the next poll
+      await loadProjectData();
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
         setError('Failed to trigger step');
       }
+      setPolling(false);
     } finally {
       setTriggeringStep(null);
     }
@@ -72,30 +126,60 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
     try {
       setTriggeringStep(step);
       setError(null);
+      setPolling(true);
       await api.retryStep(project.id, step);
-      await loadPipelineStatus();
+      await loadProjectData();
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
         setError('Failed to retry step');
       }
+      setPolling(false);
     } finally {
       setTriggeringStep(null);
     }
   };
 
   const getStepStatus = (stepName: string) => {
-    if (!pipelineStatus) return 'pending';
-    const stepStates = pipelineStatus.step_states || {};
+    const stepStates = projectData.step_states || {};
     const stepState = stepStates[stepName];
-    if (!stepState) return 'pending';
+    if (!stepState) return 'PENDING';
     return stepState.status;
   };
 
+  const getStepResult = (stepName: string): Record<string, unknown> | undefined => {
+    return projectData.step_states?.[stepName]?.result;
+  };
+
+  const getStyle = (): string => {
+    const result = getStepResult('STYLE');
+    return typeof result?.style === 'string' ? result.style : '';
+  };
+
+  const getCharacters = (): NamedResult[] => {
+    const result = getStepResult('CHARACTERS');
+    return Array.isArray(result?.characters) ? (result.characters as NamedResult[]) : [];
+  };
+
+  const getPortraits = (): PortraitResult[] => {
+    const result = getStepResult('PORTRAITS');
+    return Array.isArray(result?.portraits) ? (result.portraits as PortraitResult[]) : [];
+  };
+
+  const getChapters = (): NamedResult[] => {
+    const result = getStepResult('CHAPTERS');
+    return Array.isArray(result?.chapters) ? (result.chapters as NamedResult[]) : [];
+  };
+
+  const getIllustrations = (): IllustrationResult[] => {
+    const result = getStepResult('ILLUSTRATIONS');
+    return Array.isArray(result?.illustrations) ? (result.illustrations as IllustrationResult[]) : [];
+  };
+
   const canTriggerStep = (stepIndex: number) => {
-    if (!pipelineStatus) return stepIndex === 0;
-    return pipelineStatus.current_step === stepIndex;
+    // Can trigger if current_step matches index and step is not completed
+    return projectData.current_step === stepIndex;
   };
 
   const steps = [
@@ -108,7 +192,7 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
 
   return (
     <div className='min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 p-4'>
-      <div className='max-w-4xl mx-auto'>
+      <div className='max-w-6xl mx-auto'>
         <div className='bg-white rounded-2xl shadow-xl p-8'>
           <div className='mb-6'>
             <button
@@ -117,9 +201,9 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
             >
               ← Back to Projects
             </button>
-            <h1 className='text-3xl font-bold text-gray-900 mb-2'>{project.title}</h1>
+            <h1 className='text-3xl font-bold text-gray-900 mb-2'>{projectData.title}</h1>
             <p className='text-gray-600'>
-              Created: {new Date(project.created_at).toLocaleString()}
+              Created: {new Date(projectData.created_at).toLocaleString()}
             </p>
           </div>
 
@@ -130,81 +214,192 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
               {steps.map((step, index) => {
                 const status = getStepStatus(step.name);
                 const canTrigger = canTriggerStep(index);
-                const stepState = pipelineStatus?.step_states?.[step.name];
+                const stepState = projectData.step_states?.[step.name];
                 const errorMessage = stepState?.error_message;
+                const style = getStyle();
+                const characters = getCharacters();
+                const portraits = getPortraits();
+                const chapters = getChapters();
+                const illustrations = getIllustrations();
 
                 return (
-                  <div
-                    key={index}
-                    className={'flex items-center p-4 rounded-lg border ' + (
-                      status === 'COMPLETED'
-                        ? 'border-green-200 bg-green-50'
-                        : status === 'RUNNING'
-                        ? 'border-orange-200 bg-orange-50'
-                        : status === 'FAILED'
-                        ? 'border-red-200 bg-red-50'
-                        : status === 'STRANDED'
-                        ? 'border-yellow-200 bg-yellow-50'
-                        : 'border-gray-200 bg-gray-50'
-                    )}
-                  >
+                  <div key={index}>
                     <div
-                      className={'w-8 h-8 rounded-full flex items-center justify-center mr-4 ' + (
+                      className={'flex items-center p-4 rounded-lg border ' + (
                         status === 'COMPLETED'
-                          ? 'bg-green-600 text-white'
+                          ? 'border-green-200 bg-green-50'
                           : status === 'RUNNING'
-                          ? 'bg-orange-600 text-white'
+                          ? 'border-orange-200 bg-orange-50'
                           : status === 'FAILED'
-                          ? 'bg-red-600 text-white'
+                          ? 'border-red-200 bg-red-50'
                           : status === 'STRANDED'
-                          ? 'bg-yellow-600 text-white'
-                          : 'bg-gray-300 text-gray-600'
+                          ? 'border-yellow-200 bg-yellow-50'
+                          : 'border-gray-200 bg-gray-50'
                       )}
                     >
-                      {status === 'COMPLETED' ? '✓' : index + 1}
+                      <div
+                        className={'w-8 h-8 rounded-full flex items-center justify-center mr-4 ' + (
+                          status === 'COMPLETED'
+                            ? 'bg-green-600 text-white'
+                            : status === 'RUNNING'
+                            ? 'bg-orange-600 text-white'
+                            : status === 'FAILED'
+                            ? 'bg-red-600 text-white'
+                            : status === 'STRANDED'
+                            ? 'bg-yellow-600 text-white'
+                            : 'bg-gray-300 text-gray-600'
+                        )}
+                      >
+                        {status === 'COMPLETED' ? '✓' : index + 1}
+                      </div>
+                      <div className='flex-1'>
+                        <h3 className='font-medium text-gray-900'>{step.label}</h3>
+                        <p className='text-sm text-gray-600'>{step.description}</p>
+                        {errorMessage && (status === 'FAILED' || status === 'STRANDED') && (
+                          <p className='text-sm text-red-600 mt-1'>{errorMessage}</p>
+                        )}
+                      </div>
+                      <div className='flex items-center space-x-2'>
+                        {status === 'RUNNING' && (
+                          <span className='text-sm text-orange-600 font-medium'>Running...</span>
+                        )}
+                        {status === 'COMPLETED' && (
+                          <span className='text-sm text-green-600 font-medium'>Completed</span>
+                        )}
+                        {status === 'FAILED' && (
+                          <button
+                            onClick={() => retryStep(step.name)}
+                            disabled={triggeringStep === step.name}
+                            className='text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50'
+                          >
+                            {triggeringStep === step.name ? 'Retrying...' : 'Retry'}
+                          </button>
+                        )}
+                        {status === 'STRANDED' && (
+                          <button
+                            onClick={() => retryStep(step.name)}
+                            disabled={triggeringStep === step.name}
+                            className='text-sm bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700 disabled:opacity-50'
+                          >
+                            {triggeringStep === step.name ? 'Recovering...' : 'Recover'}
+                          </button>
+                        )}
+                        {canTrigger && status === 'PENDING' && (
+                          <button
+                            onClick={() => triggerStep(step.name)}
+                            disabled={triggeringStep === step.name}
+                            className='text-sm bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700 disabled:opacity-50'
+                          >
+                            {triggeringStep === step.name ? 'Starting...' : 'Start'}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className='flex-1'>
-                      <h3 className='font-medium text-gray-900'>{step.label}</h3>
-                      <p className='text-sm text-gray-600'>{step.description}</p>
-                      {errorMessage && (status === 'FAILED' || status === 'STRANDED') && (
-                        <p className='text-sm text-red-600 mt-1'>{errorMessage}</p>
-                      )}
-                    </div>
-                    <div className='flex items-center space-x-2'>
-                      {status === 'RUNNING' && (
-                        <span className='text-sm text-orange-600 font-medium'>Running...</span>
-                      )}
-                      {status === 'COMPLETED' && (
-                        <span className='text-sm text-green-600 font-medium'>Completed</span>
-                      )}
-                      {status === 'FAILED' && (
-                        <button
-                          onClick={() => retryStep(step.name)}
-                          disabled={triggeringStep === step.name}
-                          className='text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50'
-                        >
-                          {triggeringStep === step.name ? 'Retrying...' : 'Retry'}
-                        </button>
-                      )}
-                      {status === 'STRANDED' && (
-                        <button
-                          onClick={() => retryStep(step.name)}
-                          disabled={triggeringStep === step.name}
-                          className='text-sm bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700 disabled:opacity-50'
-                        >
-                          {triggeringStep === step.name ? 'Recovering...' : 'Recover'}
-                        </button>
-                      )}
-                      {canTrigger && status !== 'RUNNING' && status !== 'COMPLETED' && (
-                        <button
-                          onClick={() => triggerStep(step.name)}
-                          disabled={triggeringStep === step.name}
-                          className='text-sm bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700 disabled:opacity-50'
-                        >
-                          {triggeringStep === step.name ? 'Starting...' : 'Start'}
-                        </button>
-                      )}
-                    </div>
+
+                    {/* STYLE Step - User Input */}
+                    {step.name === 'STYLE' && status === 'PENDING' && canTrigger && (
+                      <div className='mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg'>
+                        <h3 className='font-medium text-gray-900 mb-2'>Optional: Specify Art Style</h3>
+                        <p className='text-sm text-gray-600 mb-3'>
+                          Leave empty to let Gemini generate a style based on your book text
+                        </p>
+                        <input
+                          type='text'
+                          value={userStyle}
+                          onChange={(e) => setUserStyle(e.target.value)}
+                          placeholder='e.g., watercolor, comic book, minimal flat design'
+                          className='w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none'
+                        />
+                      </div>
+                    )}
+
+                    {/* STYLE Step - Generated style */}
+                    {step.name === 'STYLE' && style && (
+                      <div className='mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg'>
+                        <h3 className='font-medium text-gray-900 mb-2'>Art Style</h3>
+                        <p className='text-sm text-gray-700'>{style}</p>
+                      </div>
+                    )}
+
+                    {/* CHARACTERS Step - Character cards */}
+                    {step.name === 'CHARACTERS' && characters.length > 0 && (
+                      <div className='mt-3 grid grid-cols-1 md:grid-cols-2 gap-4'>
+                        {characters.map((char, idx) => (
+                          <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
+                            <h4 className='font-medium text-gray-900'>{char.name}</h4>
+                            <p className='text-sm text-gray-600 mt-1'>{char.prompt}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* PORTRAITS Step - Portrait cards with images */}
+                    {step.name === 'PORTRAITS' && portraits.length > 0 && (
+                      <div className='mt-3 grid grid-cols-1 md:grid-cols-2 gap-4'>
+                        {portraits.map((portrait, idx) => {
+                          const imageUrl = api.imageUrl(portrait.portrait_path);
+                          return (
+                            <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
+                              <h4 className='font-medium text-gray-900'>{portrait.name}</h4>
+                              <p className='text-sm text-gray-600 mt-1'>{portrait.prompt}</p>
+                              {imageUrl ? (
+                                <div className='mt-3'>
+                                  <img
+                                    src={imageUrl}
+                                    alt={`Portrait of ${portrait.name}`}
+                                    className='w-full rounded-lg border border-gray-200'
+                                  />
+                                </div>
+                              ) : (
+                                status === 'RUNNING' && (
+                                  <p className='text-sm text-orange-600 mt-2'>Generating portrait...</p>
+                                )
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* CHAPTERS Step - Chapter cards */}
+                    {step.name === 'CHAPTERS' && chapters.length > 0 && (
+                      <div className='mt-3 grid grid-cols-1 gap-4'>
+                        {chapters.map((chapter, idx) => (
+                          <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
+                            <h4 className='font-medium text-gray-900'>{chapter.name}</h4>
+                            <p className='text-sm text-gray-600 mt-1'>{chapter.prompt}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ILLUSTRATIONS Step - Illustration cards with images */}
+                    {step.name === 'ILLUSTRATIONS' && illustrations.length > 0 && (
+                      <div className='mt-3 grid grid-cols-1 gap-4'>
+                        {illustrations.map((illustration, idx) => {
+                          const imageUrl = api.imageUrl(illustration.illustration_path);
+                          return (
+                            <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
+                              <h4 className='font-medium text-gray-900'>{illustration.name}</h4>
+                              <p className='text-sm text-gray-600 mt-1'>{illustration.prompt}</p>
+                              {imageUrl ? (
+                                <div className='mt-3'>
+                                  <img
+                                    src={imageUrl}
+                                    alt={`Illustration of ${illustration.name}`}
+                                    className='w-full rounded-lg border border-gray-200'
+                                  />
+                                </div>
+                              ) : (
+                                status === 'RUNNING' && (
+                                  <p className='text-sm text-orange-600 mt-2'>Generating illustration...</p>
+                                )
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -236,12 +431,6 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
                 </pre>
               </div>
             )}
-          </div>
-
-          <div className='mt-8 pt-6 border-t border-gray-200'>
-            <p className='text-xs text-gray-500 text-center'>
-              Pipeline execution with Gemini integration will be available in Phase 4
-            </p>
           </div>
         </div>
       </div>

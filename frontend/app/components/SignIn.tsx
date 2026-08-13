@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { api, SignInRequest, ApiError } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 
 interface SignInProps {
-  onSignIn: (user: any) => void;
+  onSignIn: (user: { email: string; name: string }) => void;
 }
 
 export default function SignIn({ onSignIn }: SignInProps) {
@@ -32,7 +32,7 @@ export default function SignIn({ onSignIn }: SignInProps) {
       }
 
       const response = await api.signIn({ name: name.trim(), email: email.trim() });
-      onSignIn(response.user);
+      onSignIn(response.user as { email: string; name: string });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
