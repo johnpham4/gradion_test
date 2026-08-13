@@ -1,129 +1,76 @@
 # Book Illustration Studio
 
-A web application that transforms book text into character portraits and chapter illustrations using Google's Gemini API.
+A web app that turns a book's text into character portraits and a chapter illustration using the Gemini API. Five steps, run one at a time by the user: **Style → Characters → Portraits → Chapters → Illustrations**.
 
 ## Architecture
 
-- **Frontend**: Next.js + TypeScript
-- **Backend**: FastAPI + Python
-- **Storage**: JSON files + local filesystem
-- **API**: REST with polling for progress updates
-- **AI**: Google GenAI Python SDK
+- **Frontend** — Next.js 16 + React 19 + TypeScript + Tailwind. Polls the backend while a step runs so each generated item appears as it lands.
+- **Backend** — FastAPI. One `main:app` process; pipeline steps run in a threadpool so polling stays responsive during long Gemini calls.
+- **Storage** — JSON files on disk (state isolated per user/project) + book text and images on the local filesystem, served through the API. No database.
+- **Gemini** — `google-genai` SDK, notebook-faithful pipeline (file upload once, interaction-chained context, structured JSON output). Image generation defaults to `mock` because every current Gemini image model is paid-only (see [DECISIONS.md](DECISIONS.md)).
+
+## Prerequisites
+
+- Python 3.9+
+- Node.js 18+
+- `make` (GNU Make)
+- A Gemini API key — free tier covers the text pipeline; image models are paid-only
 
 ## Quick Start
 
-### Prerequisites
-
-- Node.js 18+ and npm
-- Python 3.9+
-- Gemini API key (free tier is enough for the text pipeline; image models are paid-only — see [DECISIONS.md](DECISIONS.md))
-
-### Setup
-
-1. **Install dependencies:**
-   ```bash
-   make setup
-   # Or individually:
-   make install-backend
-   make install-frontend
-   ```
-
-2. **Configure environment:**
-   ```bash
-   # Copy .env.example to backend/.env and add your Gemini API key
-   cp .env.example backend/.env
-   # Edit backend/.env and add your GEMINI_API_KEY
-   
-   # Create frontend environment file
-   cp frontend/env.local.example frontend/.env.local
-   ```
-
-3. **Start the application:**
-   ```bash
-   # Start both frontend and backend
-   make dev
-
-   # Or start individually:
-   make dev-backend  # Terminal 1
-   make dev-frontend # Terminal 2
-   ```
-
-### Image Generation
-
-Image generation uses **mock** mode by default - local placeholder images, zero API cost. This is because every current Gemini image model is paid-only (no free tier), so the app works out of the box; the text pipeline (style, characters, chapters) always uses real Gemini calls with the free tier.
-
-To switch providers, set `IMAGE_PROVIDER` in `backend/.env`:
 ```bash
-IMAGE_PROVIDER=mock   # Default - local placeholder images, no cost
-IMAGE_PROVIDER=gemini # Real Gemini Nano Banana calls (billing required)
-```
+# 1. Install backend (venv) + frontend (node_modules)
+make setup
 
-`IMAGE_PROVIDER=gemini` uses `gemini-3.1-flash-lite-image` via the same notebook-faithful pipeline (context-seeded, interaction-chained) so characters stay consistent across portraits and illustrations.
+# 2. Configure env
+cp .env.example backend/.env
+# edit backend/.env -> set GEMINI_API_KEY
+cp frontend/env.local.example frontend/.env.local   # optional; localhost:8000 is the default
 
-### Run Tests
+# 3. Start the stack (backend :8000, frontend :3000)
+make dev
 
-```bash
-# Run all tests
+# 4. Run tests
 make test
-
-# Or run individually:
-make test-backend
-make test-frontend
 ```
 
-## Project Structure
+`make setup`, `make dev`, and `make test` are the three entry points. Underneath:
+
+- `make dev-backend` / `make dev-frontend` — run either side on its own
+- `make test-backend` / `make test-frontend` — run either test suite alone
+
+## Environment Variables
+
+| Variable | Where | Default | Description |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | `backend/.env` | — | Real key, required. **Never commit it.** |
+| `IMAGE_PROVIDER` | `backend/.env` | `mock` | `mock` = local placeholders, no cost. `gemini` = real Nano Banana calls (billing required). |
+| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | `http://localhost:8000` | Backend base URL for the frontend. |
+
+## Project Layout
 
 ```
-gradion/
-├── frontend/          # Next.js frontend
-│   ├── app/          # Next.js app directory
-│   ├── components/   # React components
-│   └── lib/          # Utilities and API clients
-├── backend/          # FastAPI backend
-│   ├── app/          # Application modules
-│   │   ├── api/      # API routes
-│   │   ├── models/   # Pydantic models
-│   │   └── services/ # Business logic
-│   └── tests/       # Backend tests
-├── data/            # JSON file storage
-│   ├── users/       # User data
-│   ├── projects/    # Project data
-│   ├── files/       # Book texts and images
-│   └── locks/       # Write locks
-├── README.md
-├── DECISIONS.md     # Technical decisions
-└── .env.example     # Environment variables template
+backend/
+  main.py            # uvicorn entrypoint (main:app)
+  app/
+    api/             # routes: auth, projects, steps, retry, images
+    clients/         # Gemini client + MockImageClient
+    services/        # pipeline: the 5-step flow + caps
+    repositories/    # JSON file storage + write locks
+    models/          # pydantic schemas
+  tests/             # pytest
+frontend/
+  app/               # Next.js pages + components + lib/api.ts
+  app/__tests__/     # jest
+data/                # users/, projects/, files/, images/ (gitignored)
 ```
-
-## API Endpoints
-
-- `GET /api/health` - Health check endpoint
-- `POST /api/auth/sign-in` - User authentication
-- `GET /api/projects` - List user projects
-- `POST /api/projects` - Create new project
-- `GET /api/projects/:id` - Get project details
-- `POST /api/projects/:id/steps/:step` - Execute pipeline step
-- `GET /api/projects/:id/status` - Get project status
-- `POST /api/projects/:id/steps/:step/retry` - Retry failed step
 
 ## Pipeline Steps
 
-1. **Style** - Generate or define art style
-2. **Characters** - Extract adult characters with prompts
-3. **Portraits** - Generate character images
-4. **Chapters** - Generate chapter illustration prompts
-5. **Illustrations** - Generate scene illustrations
+1. **Style** — art style for the book: user-supplied or generated from the book text
+2. **Characters** — structured list of the main **adult** characters with image prompts, **max 2** (server-side cap)
+3. **Portraits** — one portrait image per character (9:16)
+4. **Chapters** — structured list of chapter illustration prompts referencing the characters, **max 1** (server-side cap)
+5. **Illustrations** — one scene illustration per chapter (16:9), reusing the portraits for character consistency
 
-## Development
-
-The application follows a phased development approach:
-
-- **Phase 1**: Project setup, basic frontend/backend, health checks
-- **Phase 2**: Authentication and project management
-- **Phase 3**: Gemini pipeline integration
-- **Phase 4**: Frontend UI implementation
-- **Phase 5**: Testing and documentation
-
-## License
-
-Internal assessment project - Gradion
+Caps are enforced in the pipeline, not just the UI. See [DECISIONS.md](DECISIONS.md) for the pipeline and storage decisions, and [TESTING.md](TESTING.md) for the test strategy and real reports.
