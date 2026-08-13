@@ -2,6 +2,15 @@
 
 A web app that turns a book's text into character portraits and a chapter illustration using the Gemini API. Five steps, run one at a time by the user: **Style → Characters → Portraits → Chapters → Illustrations**.
 
+## Screenshots
+
+| | |
+| --- | --- |
+| Sign in | Project list |
+| ![Sign in](images/singin.png) | ![Project list](images/projects_list.png) |
+| New project | Pipeline result |
+| ![New project](images/new_projects.png) | ![Pipeline result](images/book_illustrate.png) |
+
 ## Architecture
 
 - **Frontend** — Next.js 16 + React 19 + TypeScript + Tailwind. Polls the backend while a step runs so each generated item appears as it lands.
