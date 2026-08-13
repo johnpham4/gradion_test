@@ -4,6 +4,16 @@ from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.projects import router as projects_router
 from app.config import settings
+from loguru import logger
+import sys
+
+# Configure loguru
+logger.remove()  # Remove default handler
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>: <white>{message}</white>",
+    level="INFO"
+)
 
 app = FastAPI(
     title="Book Illustration Studio API",
