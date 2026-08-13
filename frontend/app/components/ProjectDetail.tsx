@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, Project, ApiError } from '../lib/api';
 
 interface ProjectDetailProps {
@@ -21,18 +21,34 @@ interface IllustrationResult extends NamedResult {
   illustration_path?: string | null;
 }
 
+const STEPS = [
+  { key: 'STYLE', label: 'Style' },
+  { key: 'CHARACTERS', label: 'Characters' },
+  { key: 'PORTRAITS', label: 'Portraits' },
+  { key: 'CHAPTERS', label: 'Chapters' },
+  { key: 'ILLUSTRATIONS', label: 'Illustrations' },
+];
+
+const CAPTIONS: Record<string, string> = {
+  STYLE: 'Reading your book text and defining an art style',
+  CHARACTERS: 'Generating the character list from your book’s text',
+  PORTRAITS: 'Generating character portraits',
+  CHAPTERS: 'Generating a chapter illustration prompt',
+  ILLUSTRATIONS: 'Generating the chapter illustration',
+};
+
 export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
   const [bookText, setBookText] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectData, setProjectData] = useState<Project>(project);
   const [triggeringStep, setTriggeringStep] = useState<string | null>(null);
   const [userStyle, setUserStyle] = useState<string>('');
   const [polling, setPolling] = useState(false);
+  const [bookModalOpen, setBookModalOpen] = useState(false);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   const loadBookText = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const fullProject = await api.getProject(project.id);
       setBookText(fullProject.book_text || '');
@@ -43,8 +59,6 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
       } else {
         setError('Failed to load book text');
       }
-    } finally {
-      setLoading(false);
     }
   }, [project.id]);
 
@@ -60,7 +74,6 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
   useEffect(() => {
     if (project.book_text) {
       setBookText(project.book_text);
-      setLoading(false);
     } else {
       loadBookText();
     }
@@ -92,6 +105,17 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
       return () => clearInterval(interval);
     }
   }, [polling, project.id]);
+
+  // Close the book modal on Escape, restore focus on close
+  useEffect(() => {
+    if (!bookModalOpen) return;
+    closeBtnRef.current?.focus();
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setBookModalOpen(false);
+    };
+    document.addEventListener('keydown', onKeydown);
+    return () => document.removeEventListener('keydown', onKeydown);
+  }, [bookModalOpen]);
 
   const triggerStep = async (step: string) => {
     try {
@@ -177,269 +201,315 @@ export default function ProjectDetail({ project, onBack }: ProjectDetailProps) {
     return Array.isArray(result?.illustrations) ? (result.illustrations as IllustrationResult[]) : [];
   };
 
-  const canTriggerStep = (stepIndex: number) => {
-    // Can trigger if current_step matches index and step is not completed
-    return projectData.current_step === stepIndex;
+  const currentIdx = Math.min(projectData.current_step, STEPS.length);
+  const currentStep = currentIdx < STEPS.length ? STEPS[currentIdx] : null;
+  const currentStatus = currentStep ? getStepStatus(currentStep.key) : null;
+  const running = currentStep && currentStatus === 'RUNNING';
+  const stranded = currentStep && currentStatus === 'STRANDED';
+  const failed = currentStep && currentStatus === 'FAILED';
+  const style = getStyle();
+  const characters = getCharacters();
+  const portraits = getPortraits();
+  const chapters = getChapters();
+  const illustrations = getIllustrations();
+
+  const bookTextTruncated = bookText.replace(/\s+/g, ' ').trim().length > 220;
+  const bookSnippet =
+    bookText.replace(/\s+/g, ' ').trim().length > 220
+      ? bookText.replace(/\s+/g, ' ').trim().slice(0, 220) + '…'
+      : bookText;
+
+  const buildMainPanel = () => {
+    if (!currentStep) {
+      return (
+        <div className="step-panel">
+          <div className="status-line" style={{ color: 'var(--grad-ink)' }}>
+            <span className="gd-num-square done" style={{ width: 20, height: 20, fontSize: 11 }}>✓</span>
+            All 5 steps complete — nothing left to generate.
+          </div>
+          <p className="help">This project is done. Reopen it any time; nothing here regenerates automatically.</p>
+        </div>
+      );
+    }
+
+    if (stranded) {
+      const stepState = projectData.step_states?.[currentStep.key];
+      return (
+        <div className="step-panel">
+          <div className="status-line" style={{ color: 'var(--grad-ink)' }}>
+            This step was interrupted (probably a page refresh or server restart mid-request) and never finished.
+          </div>
+          {stepState?.error_message && <p className="err-text">{stepState.error_message}</p>}
+          <p className="help">Nothing before this step was affected — everything already generated is saved. Retrying is safe.</p>
+          <button
+            className="gd-btn gd-btn-warn"
+            style={{ marginTop: 14 }}
+            disabled={triggeringStep === currentStep.key}
+            onClick={() => retryStep(currentStep.key)}
+          >
+            {triggeringStep === currentStep.key ? 'Recovering…' : 'Recover ' + currentStep.label}
+          </button>
+        </div>
+      );
+    }
+
+    if (failed) {
+      const stepState = projectData.step_states?.[currentStep.key];
+      return (
+        <div className="step-panel">
+          <div className="status-line" style={{ color: 'var(--grad-ink)' }}>
+            This step failed. Retry it to continue the pipeline.
+          </div>
+          {stepState?.error_message && <p className="err-text">{stepState.error_message}</p>}
+          <button
+            className="gd-btn gd-btn-danger"
+            style={{ marginTop: 14 }}
+            disabled={triggeringStep === currentStep.key}
+            onClick={() => retryStep(currentStep.key)}
+          >
+            {triggeringStep === currentStep.key ? 'Retrying…' : 'Retry ' + currentStep.label}
+          </button>
+        </div>
+      );
+    }
+
+    const isStyleStep = currentStep.key === 'STYLE';
+    return (
+      <div className="step-panel">
+        {running ? (
+          <div className="status-line">
+            <span className="spinner sm"></span> {CAPTIONS[currentStep.key]} — usually a couple of seconds with the mock provider, longer for real Gemini calls…
+          </div>
+        ) : (
+          <div className="status-line" style={{ color: 'var(--grad-ink)' }}>
+            Ready for the next step: <b>&nbsp;{currentStep.label}</b>.
+          </div>
+        )}
+        {isStyleStep && !running && (
+          <div className="gd-field" style={{ marginBottom: 14 }}>
+            <label htmlFor="style-input">Art style (optional)</label>
+            <input
+              id="style-input"
+              value={userStyle}
+              onChange={(e) => setUserStyle(e.target.value)}
+              placeholder="Leave blank to let Gemini choose a style based on your book"
+              disabled={triggeringStep === currentStep.key}
+            />
+          </div>
+        )}
+        <p className="help">Reopening this page mid-step won&apos;t fire a second request — it just shows the same in-flight state until it lands.</p>
+        <button
+          className="gd-btn gd-btn-primary"
+          style={{ marginTop: 14 }}
+          disabled={!!running || triggeringStep === currentStep.key}
+          onClick={() => triggerStep(currentStep.key)}
+        >
+          {running ? 'Generating…' : 'Generate ' + currentStep.label}
+          {!running && <span className="gd-arrow">→</span>}
+        </button>
+      </div>
+    );
   };
 
-  const steps = [
-    { name: 'STYLE', label: 'Style', description: 'Define art style' },
-    { name: 'CHARACTERS', label: 'Characters', description: 'Extract characters' },
-    { name: 'PORTRAITS', label: 'Portraits', description: 'Generate portraits' },
-    { name: 'CHAPTERS', label: 'Chapters', description: 'Create chapter prompts' },
-    { name: 'ILLUSTRATIONS', label: 'Illustrations', description: 'Generate illustrations' },
-  ];
-
-  return (
-    <div className='min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 p-4'>
-      <div className='max-w-6xl mx-auto'>
-        <div className='bg-white rounded-2xl shadow-xl p-8'>
-          <div className='mb-6'>
-            <button
-              onClick={onBack}
-              className='text-sm text-gray-600 hover:text-gray-800 transition mb-4 inline-block'
-            >
-              ← Back to Projects
-            </button>
-            <h1 className='text-3xl font-bold text-gray-900 mb-2'>{projectData.title}</h1>
-            <p className='text-gray-600'>
-              Created: {new Date(projectData.created_at).toLocaleString()}
-            </p>
-          </div>
-
-          {/* Pipeline Steps */}
-          <div className='mb-8'>
-            <h2 className='text-xl font-semibold text-gray-900 mb-4'>Pipeline Progress</h2>
-            <div className='space-y-3'>
-              {steps.map((step, index) => {
-                const status = getStepStatus(step.name);
-                const canTrigger = canTriggerStep(index);
-                const stepState = projectData.step_states?.[step.name];
-                const errorMessage = stepState?.error_message;
-                const style = getStyle();
-                const characters = getCharacters();
-                const portraits = getPortraits();
-                const chapters = getChapters();
-                const illustrations = getIllustrations();
-
-                return (
-                  <div key={index}>
-                    <div
-                      className={'flex items-center p-4 rounded-lg border ' + (
-                        status === 'COMPLETED'
-                          ? 'border-green-200 bg-green-50'
-                          : status === 'RUNNING'
-                          ? 'border-orange-200 bg-orange-50'
-                          : status === 'FAILED'
-                          ? 'border-red-200 bg-red-50'
-                          : status === 'STRANDED'
-                          ? 'border-yellow-200 bg-yellow-50'
-                          : 'border-gray-200 bg-gray-50'
-                      )}
-                    >
-                      <div
-                        className={'w-8 h-8 rounded-full flex items-center justify-center mr-4 ' + (
-                          status === 'COMPLETED'
-                            ? 'bg-green-600 text-white'
-                            : status === 'RUNNING'
-                            ? 'bg-orange-600 text-white'
-                            : status === 'FAILED'
-                            ? 'bg-red-600 text-white'
-                            : status === 'STRANDED'
-                            ? 'bg-yellow-600 text-white'
-                            : 'bg-gray-300 text-gray-600'
-                        )}
-                      >
-                        {status === 'COMPLETED' ? '✓' : index + 1}
-                      </div>
-                      <div className='flex-1'>
-                        <h3 className='font-medium text-gray-900'>{step.label}</h3>
-                        <p className='text-sm text-gray-600'>{step.description}</p>
-                        {errorMessage && (status === 'FAILED' || status === 'STRANDED') && (
-                          <p className='text-sm text-red-600 mt-1'>{errorMessage}</p>
-                        )}
-                      </div>
-                      <div className='flex items-center space-x-2'>
-                        {status === 'RUNNING' && (
-                          <span className='text-sm text-orange-600 font-medium'>Running...</span>
-                        )}
-                        {status === 'COMPLETED' && (
-                          <span className='text-sm text-green-600 font-medium'>Completed</span>
-                        )}
-                        {status === 'FAILED' && (
-                          <button
-                            onClick={() => retryStep(step.name)}
-                            disabled={triggeringStep === step.name}
-                            className='text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 disabled:opacity-50'
-                          >
-                            {triggeringStep === step.name ? 'Retrying...' : 'Retry'}
-                          </button>
-                        )}
-                        {status === 'STRANDED' && (
-                          <button
-                            onClick={() => retryStep(step.name)}
-                            disabled={triggeringStep === step.name}
-                            className='text-sm bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700 disabled:opacity-50'
-                          >
-                            {triggeringStep === step.name ? 'Recovering...' : 'Recover'}
-                          </button>
-                        )}
-                        {canTrigger && status === 'PENDING' && (
-                          <button
-                            onClick={() => triggerStep(step.name)}
-                            disabled={triggeringStep === step.name}
-                            className='text-sm bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700 disabled:opacity-50'
-                          >
-                            {triggeringStep === step.name ? 'Starting...' : 'Start'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* STYLE Step - User Input */}
-                    {step.name === 'STYLE' && status === 'PENDING' && canTrigger && (
-                      <div className='mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg'>
-                        <h3 className='font-medium text-gray-900 mb-2'>Optional: Specify Art Style</h3>
-                        <p className='text-sm text-gray-600 mb-3'>
-                          Leave empty to let Gemini generate a style based on your book text
-                        </p>
-                        <input
-                          type='text'
-                          value={userStyle}
-                          onChange={(e) => setUserStyle(e.target.value)}
-                          placeholder='e.g., watercolor, comic book, minimal flat design'
-                          className='w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none'
-                        />
-                      </div>
-                    )}
-
-                    {/* STYLE Step - Generated style */}
-                    {step.name === 'STYLE' && style && (
-                      <div className='mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg'>
-                        <h3 className='font-medium text-gray-900 mb-2'>Art Style</h3>
-                        <p className='text-sm text-gray-700'>{style}</p>
-                      </div>
-                    )}
-
-                    {/* CHARACTERS Step - Character cards */}
-                    {step.name === 'CHARACTERS' && characters.length > 0 && (
-                      <div className='mt-3 grid grid-cols-1 md:grid-cols-2 gap-4'>
-                        {characters.map((char, idx) => (
-                          <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
-                            <h4 className='font-medium text-gray-900'>{char.name}</h4>
-                            <p className='text-sm text-gray-600 mt-1'>{char.prompt}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* PORTRAITS Step - Portrait cards with images */}
-                    {step.name === 'PORTRAITS' && portraits.length > 0 && (
-                      <div className='mt-3 grid grid-cols-1 md:grid-cols-2 gap-4'>
-                        {portraits.map((portrait, idx) => {
-                          const imageUrl = api.imageUrl(portrait.portrait_path);
-                          return (
-                            <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
-                              <h4 className='font-medium text-gray-900'>{portrait.name}</h4>
-                              <p className='text-sm text-gray-600 mt-1'>{portrait.prompt}</p>
-                              {imageUrl ? (
-                                <div className='mt-3'>
-                                  {/* Images come from the backend with a session cookie; next/image
-                                      would bypass the cookie, so a plain img is required here. */}
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={imageUrl}
-                                    alt={`Portrait of ${portrait.name}`}
-                                    className='w-full rounded-lg border border-gray-200'
-                                  />
-                                </div>
-                              ) : (
-                                status === 'RUNNING' && (
-                                  <p className='text-sm text-orange-600 mt-2'>Generating portrait...</p>
-                                )
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* CHAPTERS Step - Chapter cards */}
-                    {step.name === 'CHAPTERS' && chapters.length > 0 && (
-                      <div className='mt-3 grid grid-cols-1 gap-4'>
-                        {chapters.map((chapter, idx) => (
-                          <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
-                            <h4 className='font-medium text-gray-900'>{chapter.name}</h4>
-                            <p className='text-sm text-gray-600 mt-1'>{chapter.prompt}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* ILLUSTRATIONS Step - Illustration cards with images */}
-                    {step.name === 'ILLUSTRATIONS' && illustrations.length > 0 && (
-                      <div className='mt-3 grid grid-cols-1 gap-4'>
-                        {illustrations.map((illustration, idx) => {
-                          const imageUrl = api.imageUrl(illustration.illustration_path);
-                          return (
-                            <div key={idx} className='p-4 bg-gray-50 border border-gray-200 rounded-lg'>
-                              <h4 className='font-medium text-gray-900'>{illustration.name}</h4>
-                              <p className='text-sm text-gray-600 mt-1'>{illustration.prompt}</p>
-                              {imageUrl ? (
-                                <div className='mt-3'>
-                                  {/* Images come from the backend with a session cookie; next/image
-                                      would bypass the cookie, so a plain img is required here. */}
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={imageUrl}
-                                    alt={`Illustration of ${illustration.name}`}
-                                    className='w-full rounded-lg border border-gray-200'
-                                  />
-                                </div>
-                              ) : (
-                                status === 'RUNNING' && (
-                                  <p className='text-sm text-orange-600 mt-2'>Generating illustration...</p>
-                                )
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+  const entityCardHtml = (
+    item: NamedResult,
+    kind: 'portrait' | 'illustration',
+    imagePath: string | null | undefined,
+    generating: boolean
+  ) => {
+    const artClass = kind === 'illustration' ? 'art chapter' : 'art';
+    let art;
+    if (imagePath) {
+      art = (
+        <div className={artClass}>
+          {/* Images come from the backend with a session cookie; next/image
+              would bypass the cookie, so a plain img is required here. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={api.imageUrl(imagePath) || undefined}
+            alt={kind === 'portrait' ? `Portrait of ${item.name}` : `Illustration of ${item.name}`}
+          />
+        </div>
+      );
+    } else if (generating) {
+      art = (
+        <div className={artClass + ' pending'}>
+          <div style={{ textAlign: 'center' }}>
+            <span className="spinner sm"></span>
+            <div className="gen-caption">
+              Generating {kind === 'portrait' ? 'portrait for ' + item.name : 'illustration'}…
             </div>
           </div>
+        </div>
+      );
+    } else {
+      art = (
+        <div className={artClass + ' pending'}>
+          <span className="placeholder-label muted">Not generated yet</span>
+        </div>
+      );
+    }
+    return (
+      <div className="entity-card">
+        {art}
+        <div className="body">
+          <h5>{item.name}</h5>
+          <p>{item.prompt}</p>
+        </div>
+      </div>
+    );
+  };
 
-          {/* Book Text */}
+  const portraitsRunning = running && currentStep?.key === 'PORTRAITS';
+  const illustrationsRunning = running && currentStep?.key === 'ILLUSTRATIONS';
+
+  const sideNote =
+    style !== '' ? (
+      <div className="side-note">
+        <h5>Style</h5>
+        <p>{style}</p>
+      </div>
+    ) : (
+      <div className="side-note">
+        <h5>Book text</h5>
+        <p style={{ fontStyle: 'italic' }}>{bookSnippet}</p>
+        {bookTextTruncated && (
+          <button
+            type="button"
+            className="gd-btn gd-btn-ghost gd-btn-sm"
+            style={{ paddingLeft: 0, marginTop: 8 }}
+            onClick={() => setBookModalOpen(true)}
+          >
+            Read full text →
+          </button>
+        )}
+      </div>
+    );
+
+  return (
+    <div>
+      <div className="app-body">
+        <a className="back-link" onClick={onBack}>← Back to projects</a>
+        <h2 style={{ fontSize: 22, marginBottom: 4 }}>{projectData.title}</h2>
+        <p className="meta" style={{ marginBottom: 24 }}>
+          Created {new Date(projectData.created_at).toLocaleDateString()}
+        </p>
+
+        <div className="stepper">
+          {STEPS.map((s, i) => {
+            const done = i < currentIdx;
+            const isCurrent = i === currentIdx;
+            const cls = done ? 'done' : isCurrent ? 'current' : 'pending';
+            const sq = done
+              ? <span className="gd-num-square done">✓</span>
+              : <span className={'gd-num-square ' + (isCurrent ? '' : 'gray')}>{i + 1}</span>;
+            return (
+              <div key={s.key} style={{ display: 'contents' }}>
+                <div className={'step ' + cls}>
+                  {sq}
+                  <span className="lbl">{s.label}</span>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className={'connector ' + (i < currentIdx ? 'done' : '')}></div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="detail-grid">
           <div>
-            <h2 className='text-xl font-semibold text-gray-900 mb-4'>Book Text</h2>
-            {loading ? (
-              <div className='text-center py-8'>
-                <div className='inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600'></div>
-                <p className='mt-2 text-gray-600'>Loading book text...</p>
-              </div>
-            ) : error ? (
-              <div className='bg-red-50 border border-red-200 rounded-lg p-4'>
-                <p className='text-sm text-red-600'>{error}</p>
-                <button
-                  onClick={loadBookText}
-                  className='mt-2 text-sm text-red-600 hover:text-red-800 underline'
-                >
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <div className='bg-gray-50 border border-gray-200 rounded-lg p-6'>
-                <pre className='whitespace-pre-wrap text-sm text-gray-800 font-sans max-h-96 overflow-y-auto'>
-                  {bookText}
-                </pre>
+            {buildMainPanel()}
+            <div style={{ marginTop: 28 }}>
+              {(() => {
+                const sections: Array<{ title: string; single: boolean; body: React.ReactNode }> = [];
+                if (illustrations.length) {
+                  sections.push({
+                    title: `Illustrations (${illustrations.length})`,
+                    single: true,
+                    body: illustrations.map((it, i) => (
+                      <div key={i}>{entityCardHtml(it, 'illustration', it.illustration_path, !!illustrationsRunning)}</div>
+                    )),
+                  });
+                }
+                if (portraits.length) {
+                  sections.push({
+                    title: `Portraits (${portraits.length})`,
+                    single: false,
+                    body: portraits.map((it, i) => (
+                      <div key={i}>{entityCardHtml(it, 'portrait', it.portrait_path, !!portraitsRunning)}</div>
+                    )),
+                  });
+                }
+                if (chapters.length) {
+                  sections.push({
+                    title: `Chapters (${chapters.length})`,
+                    single: true,
+                    body: chapters.map((c, i) => (
+                      <div key={i} className="entity-card">
+                        <div className="body">
+                          <h5>{c.name}</h5>
+                          <p>{c.prompt}</p>
+                        </div>
+                      </div>
+                    )),
+                  });
+                }
+                if (characters.length) {
+                  sections.push({
+                    title: `Characters (${characters.length})`,
+                    single: false,
+                    body: characters.map((c, i) => (
+                      <div key={i} className="entity-card">
+                        <div className="body">
+                          <h5>{c.name}</h5>
+                          <p>{c.prompt}</p>
+                        </div>
+                      </div>
+                    )),
+                  });
+                }
+                return sections.map((sec) => (
+                  <div key={sec.title} style={{ marginBottom: 28 }}>
+                    <div className="panel-title"><h3>{sec.title}</h3></div>
+                    <div className="entity-grid" style={{ gridTemplateColumns: sec.single ? '1fr' : 'repeat(2, 1fr)' }}>
+                      {sec.body}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {error && (
+              <div style={{ marginTop: 20, padding: 12, border: '1px solid #f0c0c0', borderRadius: 8, background: '#fff5f5' }}>
+                <p className="err-text" style={{ margin: 0 }}>{error}</p>
               </div>
             )}
           </div>
+
+          <div>{sideNote}</div>
         </div>
       </div>
+
+      {bookModalOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setBookModalOpen(false); }}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="book-modal-title">
+            <div className="modal-head">
+              <h4 id="book-modal-title" style={{ margin: 0 }}>Full book text</h4>
+              <button
+                type="button"
+                className="modal-close"
+                ref={closeBtnRef}
+                onClick={() => setBookModalOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">{bookText}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

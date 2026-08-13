@@ -7,9 +7,9 @@ A web app that turns a book's text into character portraits and a chapter illust
 | | |
 | --- | --- |
 | Sign in | Project list |
-| ![Sign in](images/singin.png) | ![Project list](images/projects_list.png) |
+| ![Sign in](images/signin.png) | ![Project list](images/project_list.png) |
 | New project | Pipeline result |
-| ![New project](images/new_projects.png) | ![Pipeline result](images/book_illustrate.png) |
+| ![New project](images/project_create.png) | ![Pipeline result](images/book_illustrate.png) |
 
 ## Architecture
 

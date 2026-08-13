@@ -45,68 +45,48 @@ export default function SignIn({ onSignIn }: SignInProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Book Illustration Studio
-            </h1>
-            <p className="text-gray-600">Sign in to get started</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                Name
-              </label>
-              <input
-                type="text"
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                placeholder="Enter your name"
-                disabled={loading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                placeholder="Enter your email"
-                disabled={loading}
-              />
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg hover:bg-orange-700 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              No password required. Just your name and email to get started.
-            </p>
-          </div>
+    <div className="center-page">
+      <div className="auth-card">
+        <div className="logo-row">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/gradion-logo.png" alt="Gradion" />
         </div>
+        <h3 style={{ textAlign: 'center', fontSize: 20 }}>Book Illustration Studio</h3>
+        <p className="lede">Enter your details to start or resume an illustration project.</p>
+
+        <form onSubmit={handleSubmit} className="gd-field">
+          <div className="gd-field">
+            <label htmlFor="name">Name</label>
+            <input
+              type="text"
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Mira Hassan"
+              disabled={loading}
+            />
+          </div>
+          <div className="gd-field">
+            <label htmlFor="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="mira@example.com"
+              disabled={loading}
+            />
+          </div>
+          {error && <div className="err-text">{error}</div>}
+          <button type="submit" disabled={loading} className="gd-btn gd-btn-primary">
+            {loading ? 'Signing in…' : 'Sign In'} {!loading && <span className="gd-arrow">→</span>}
+          </button>
+        </form>
+
+        <p className="meta">
+          No password — this is a lightweight identity check. Using an email that already
+          has projects resumes them exactly where you left off.
+        </p>
       </div>
     </div>
   );

@@ -10,6 +10,8 @@ interface ProjectListProps {
   currentUser: { email: string; name: string } | null;
 }
 
+const STEPS = ['Style', 'Characters', 'Portraits', 'Chapters', 'Illustrations'];
+
 export default function ProjectList({ onSelectProject, onNewProject, onSignOut, currentUser }: ProjectListProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,16 +38,23 @@ export default function ProjectList({ onSelectProject, onNewProject, onSignOut, 
     }
   };
 
-  const getStatusColor = (status: string) => {
-    if (status === 'CREATED') return 'bg-gray-100 text-gray-800';
-    if (status === 'DONE') return 'bg-green-100 text-green-800';
-    return 'bg-blue-100 text-blue-800';
+  const getPillClass = (status: string) => {
+    if (status === 'CREATED') return 'gd-pill gray';
+    if (status === 'DONE') return 'gd-pill ink';
+    return 'gd-pill';
   };
 
   const getStatusLabel = (status: string) => {
     if (status === 'CREATED') return 'Draft';
     if (status === 'DONE') return 'Done';
-    return 'In Progress';
+    return 'In progress';
+  };
+
+  const getSubtitle = (project: Project) => {
+    if (project.overall_status === 'CREATED') return 'Book text saved · style not yet generated';
+    if (project.overall_status === 'DONE') return 'All 5 steps complete';
+    const done = Math.min(project.current_step, STEPS.length);
+    return STEPS.slice(0, done).join(' + ') + ' done';
   };
 
   const getProgressSegments = (currentStep: number) => {
@@ -56,108 +65,94 @@ export default function ProjectList({ onSelectProject, onNewProject, onSignOut, 
     return segments;
   };
 
+  const initials = (currentUser?.name || '?')
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 p-4">
-      <div className="max-w-5xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                Book Illustration Studio
-              </h1>
-              <p className="text-gray-600">Welcome, {currentUser?.name}</p>
-            </div>
-            <button
-              onClick={onSignOut}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition"
-            >
-              Sign Out
-            </button>
+    <div>
+      <nav className="gd-nav">
+        <div className="gd-nav-inner">
+          <div className="gd-nav-logo" onClick={onNewProject}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/gradion-logo.png" alt="Gradion" className="gd-nav-logo-img" />
           </div>
-
-          <div className="mb-6">
-            <button
-              onClick={onNewProject}
-              className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg hover:bg-orange-700 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition font-medium"
-            >
-              + New Project
-            </button>
+          <div className="gd-nav-links">
+            <a onClick={onNewProject}>Projects</a>
           </div>
-
-          {loading && (
-            <div className="text-center py-8">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
-              <p className="mt-2 text-gray-600">Loading projects...</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-sm text-red-600">{error}</p>
-              <button
-                onClick={loadProjects}
-                className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && projects.length === 0 && (
-            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
-              <div className="text-gray-400 mb-4">
-                <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-              <p className="text-gray-600 mb-4">Create your first project to get started</p>
-              <button
-                onClick={onNewProject}
-                className="text-orange-600 hover:text-orange-700 font-medium"
-              >
-                Create your first project
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && projects.length > 0 && (
-            <div className="space-y-3">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  onClick={() => onSelectProject(project)}
-                  className="border border-gray-200 rounded-lg p-5 hover:border-orange-300 hover:shadow-md cursor-pointer transition"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 truncate">{project.title}</h3>
-                      <p className="text-sm text-gray-600">
-                        Created: {new Date(project.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className={'px-3 py-1 rounded-full text-xs font-medium ml-4 ' + getStatusColor(project.overall_status)}>
-                      {getStatusLabel(project.overall_status)}
-                    </span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="flex items-center gap-1">
-                      {getProgressSegments(project.current_step).map((active, i) => (
-                        <div
-                          key={i}
-                          className={`h-1 flex-1 rounded-full transition-all ${
-                            active ? 'bg-orange-600' : 'bg-gray-200'
-                          }`}
-                        />
-                      ))}
-                      <span className="ml-3 text-sm text-gray-600">Step {project.current_step}/5</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="gd-nav-user">
+            <div className="gd-nav-avatar">{initials}</div>
+            {currentUser?.name}
+            <a onClick={onSignOut}>Sign Out</a>
+          </div>
         </div>
+      </nav>
+
+      <div className="app-body">
+        <div className="list-head">
+          <h2>Your projects</h2>
+          <button className="gd-btn gd-btn-primary" onClick={onNewProject}>+ New Project</button>
+        </div>
+
+        {loading && (
+          <div className="text-center py-8">
+            <div className="inline-block spinner"></div>
+            <p className="mt-2 text-gray-600">Loading projects...</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-red-600">{error}</p>
+            <button
+              onClick={loadProjects}
+              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && projects.length === 0 && (
+          <div className="empty-state">
+            <p style={{ margin: 0 }}>No projects yet</p>
+            <button className="gd-btn gd-btn-primary" onClick={onNewProject}>+ New Project</button>
+          </div>
+        )}
+
+        {!loading && !error && projects.length > 0 && (
+          <div className="project-list">
+            {projects.map((project, i) => (
+              <div
+                key={project.id}
+                onClick={() => onSelectProject(project)}
+                className="project-row"
+                style={{ ['--stagger' as string]: `${i * 45}ms` }}
+              >
+                <div className="title">
+                  <h4>{project.title}</h4>
+                  <span className="meta">
+                    Created {new Date(project.created_at).toLocaleDateString()} · {getSubtitle(project)}
+                  </span>
+                </div>
+                <div className="progress-mini">
+                  {getProgressSegments(project.current_step).map((active, idx) => (
+                    <span key={idx} className={'seg ' + (active ? 'on' : '')}></span>
+                  ))}
+                </div>
+                <span className={getPillClass(project.overall_status)}>
+                  {project.overall_status !== 'CREATED' && project.overall_status !== 'DONE' && (
+                    <span className="dot"></span>
+                  )}
+                  {getStatusLabel(project.overall_status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

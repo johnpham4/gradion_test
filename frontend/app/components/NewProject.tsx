@@ -85,126 +85,89 @@ export default function NewProject({ onCancel, onProjectCreated }: NewProjectPro
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Create New Project
-            </h1>
-            <p className="text-gray-600">Upload your book text to get started</p>
-          </div>
+    <div className="app-body narrow">
+      <a className="back-link" onClick={onCancel}>← Back to projects</a>
+      <h3 style={{ fontSize: 20 }}>Start a new illustration project</h3>
+      <p className="meta" style={{ marginBottom: 20 }}>
+        Give it a title, then paste the book&apos;s text or upload a .txt file.
+      </p>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-                Project Title
-              </label>
-              <input
-                type="text"
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                placeholder="Enter project title"
-                disabled={loading}
-              />
-            </div>
-
-            <div>
-              <div className="flex space-x-4 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setUseFileUpload(false)}
-                  className={'flex-1 py-2 px-4 rounded-lg transition ' + (
-                    !useFileUpload
-                      ? 'bg-orange-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  )}
-                  disabled={loading}
-                >
-                  Paste Text
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseFileUpload(true)}
-                  className={'flex-1 py-2 px-4 rounded-lg transition ' + (
-                    useFileUpload
-                      ? 'bg-orange-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  )}
-                  disabled={loading}
-                >
-                  Upload File
-                </button>
-              </div>
-
-              {!useFileUpload ? (
-                <div>
-                  <label htmlFor="bookText" className="block text-sm font-medium text-gray-700 mb-2">
-                    Book Text
-                  </label>
-                  <textarea
-                    id="bookText"
-                    value={bookText}
-                    onChange={(e) => setBookText(e.target.value)}
-                    rows={10}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition resize-none"
-                    placeholder="Paste your book text here..."
-                    disabled={loading}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {bookText.length}/10 minimum characters
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-2">
-                    Upload .txt File
-                  </label>
-                  <input
-                    type="file"
-                    id="file"
-                    accept=".txt"
-                    onChange={handleFileChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                    disabled={loading}
-                  />
-                  {file && (
-                    <p className="text-sm text-gray-600 mt-2">
-                      Selected: {file.name}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            <div className="flex space-x-4">
-              <button
-                type="button"
-                onClick={onCancel}
-                disabled={loading}
-                className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-orange-600 text-white py-3 px-4 rounded-lg hover:bg-orange-700 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                {loading ? 'Creating...' : 'Create Project'}
-              </button>
-            </div>
-          </form>
+      <form onSubmit={handleSubmit} className="gd-field">
+        <div className="gd-field">
+          <label htmlFor="title">Project title <span className="req">*</span></label>
+          <input
+            type="text"
+            id="title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. The Wind in the Willows — cottage-core"
+            disabled={loading}
+          />
         </div>
-      </div>
+
+        <div className="gd-field" style={{ marginTop: 16 }}>
+          <label>Book text <span className="req">*</span></label>
+          <div
+            className={'dropzone ' + (file && useFileUpload ? 'has-file' : '')}
+            onClick={() => document.getElementById('file-input')?.click()}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--grad-ink)' }}>
+              {file && useFileUpload ? '✓ ' + file.name + ' loaded' : 'Click to choose a .txt file'}
+            </div>
+            <div className="hint">Plain text only · used once as context for every step below</div>
+          </div>
+          <input
+            type="file"
+            id="file-input"
+            accept=".txt"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              setUseFileUpload(true);
+              handleFileChange(e);
+            }}
+            disabled={loading}
+          />
+
+          <div className="divider-or">or paste text</div>
+          <div className="gd-field">
+            <textarea
+              id="bookText"
+              rows={5}
+              value={bookText}
+              onChange={(e) => {
+                setBookText(e.target.value);
+                setUseFileUpload(false);
+              }}
+              placeholder="Once upon a time, in a small burrow by the river..."
+              disabled={loading}
+            />
+            <p className="meta" style={{ marginTop: 4 }}>
+              {bookText.length}/10 minimum characters
+            </p>
+          </div>
+        </div>
+
+        {error && <div className="err-text">{error}</div>}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="gd-btn gd-btn-primary"
+          style={{ width: '100%', justifyContent: 'center', marginTop: 20 }}
+        >
+          {loading ? 'Creating…' : 'Create project'} {!loading && <span className="gd-arrow">→</span>}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={loading}
+          className="gd-btn gd-btn-secondary"
+          style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}
+        >
+          Cancel
+        </button>
+      </form>
     </div>
   );
 }
