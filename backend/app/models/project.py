@@ -12,20 +12,6 @@ class StepState(BaseModel):
     result: Optional[Dict[str, Any]] = None  # Step execution result
 
 
-class Character(BaseModel):
-    name: str
-    prompt: str
-    portrait_path: Optional[str] = None
-    portrait_ready: bool = False
-
-
-class Chapter(BaseModel):
-    name: str
-    prompt: str
-    illustration_path: Optional[str] = None
-    illustration_ready: bool = False
-
-
 class Project(BaseModel):
     id: str
     user_email: str
@@ -36,10 +22,6 @@ class Project(BaseModel):
     overall_status: str = "CREATED"  # CREATED, STYLE_SET, CHARACTERS_GENERATED, PORTRAITS_GENERATED, CHAPTERS_GENERATED, DONE
     current_step: int = 0
     step_states: Dict[str, StepState] = {}  # All step states with results
-    step_state: Optional[StepState] = None  # Legacy field for backward compatibility
-    style: Optional[str] = None
-    characters: List[Character] = []
-    chapters: List[Chapter] = []
 
 
 class ProjectCreate(BaseModel):

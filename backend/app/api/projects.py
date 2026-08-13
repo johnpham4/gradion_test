@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, status, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pathlib import Path
+from loguru import logger
 from app.models.project import ProjectCreate, ProjectResponse, Project, StepState
 from app.repositories.storage import StorageRepository
 from app.services.pipeline import PipelineService
@@ -21,7 +22,7 @@ def get_gemini_client():
             gemini_client = GeminiClient()
             pipeline = PipelineService(storage, gemini_client)
         except Exception as e:
-            print(f"Failed to initialize Gemini client: {e}")
+            logger.error(f"Failed to initialize Gemini client: {e}")
             raise
     return gemini_client, pipeline
 
@@ -33,6 +34,24 @@ class ProjectListResponse(BaseModel):
 def get_session_token(request: Request) -> Optional[str]:
     """Extract session token from request"""
     return request.cookies.get("session_token")
+
+
+def convert_step_states(step_states: Dict[str, Dict]) -> Dict[str, StepState]:
+    """Convert raw step_states dicts to StepState models (tolerates legacy shapes)"""
+    result = {}
+    for step_name, step_data in step_states.items():
+        try:
+            result[step_name] = StepState(**step_data)
+        except Exception:
+            result[step_name] = StepState(
+                step=step_name,
+                status=step_data.get("status", "UNKNOWN"),
+                started_at=step_data.get("started_at"),
+                completed_at=step_data.get("completed_at"),
+                error_message=step_data.get("error_message"),
+                result=step_data.get("result"),
+            )
+    return result
 
 
 @router.get("/projects", response_model=ProjectListResponse)
@@ -200,22 +219,7 @@ async def get_project(project_id: str, request: Request):
         project["step_states"] = {}
     
     # Convert step_states dict to proper format
-    step_states_dict = {}
-    for step_name, step_data in project.get("step_states", {}).items():
-        try:
-            step_states_dict[step_name] = StepState(**step_data)
-        except Exception as e:
-            # Handle case where step_data might not match StepState model
-            step_states_dict[step_name] = StepState(
-                step=step_name,
-                status=step_data.get("status", "UNKNOWN"),
-                started_at=step_data.get("started_at"),
-                completed_at=step_data.get("completed_at"),
-                error_message=step_data.get("error_message"),
-                result=step_data.get("result")
-            )
-    
-    project["step_states"] = step_states_dict
+    project["step_states"] = convert_step_states(project.get("step_states", {}))
     
     return Project(**project)
 
@@ -317,19 +321,7 @@ async def get_pipeline_status(project_id: str, request: Request):
         }
     
     # Convert step_states to proper format
-    step_states_dict = {}
-    for step_name, step_data in project.get("step_states", {}).items():
-        try:
-            step_states_dict[step_name] = StepState(**step_data)
-        except Exception as e:
-            step_states_dict[step_name] = StepState(
-                step=step_name,
-                status=step_data.get("status", "UNKNOWN"),
-                started_at=step_data.get("started_at"),
-                completed_at=step_data.get("completed_at"),
-                error_message=step_data.get("error_message"),
-                result=step_data.get("result")
-            )
+    step_states_dict = convert_step_states(project.get("step_states", {}))
     
     return {
         "project_id": project_id,

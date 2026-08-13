@@ -12,12 +12,10 @@ class StorageRepository:
         self.base_path = Path(base_path)
         self.users_path = self.base_path / "users"
         self.projects_path = self.base_path / "projects"
-        self.locks_path = self.base_path / "locks"
-        
+
         # Ensure directories exist
         self.users_path.mkdir(parents=True, exist_ok=True)
         self.projects_path.mkdir(parents=True, exist_ok=True)
-        self.locks_path.mkdir(parents=True, exist_ok=True)
     
     def _get_user_path(self, email: str) -> Path:
         # Sanitize email for filename
@@ -26,9 +24,6 @@ class StorageRepository:
     
     def _get_project_path(self, project_id: str) -> Path:
         return self.projects_path / f"{project_id}.json"
-    
-    def _get_lock_path(self, resource_id: str) -> Path:
-        return self.locks_path / f"{resource_id}.lock"
     
     def _with_lock(self, resource_id: str, func):
         """Execute function with a per-resource in-process lock.
@@ -168,40 +163,13 @@ class StorageRepository:
         """Generate a unique ID"""
         return secrets.token_urlsafe(16)
     
-    def update_step_state(self, project_id: str, step: str, status: str, 
-                          error_message: Optional[str] = None, result: Optional[Any] = None) -> Dict[str, Any]:
-        """Update step state for a project (DEPRECATED - use atomic transition methods)"""
-        project = self.get_project(project_id)
-        if not project:
-            raise ValueError(f"Project {project_id} not found")
-        
-        from datetime import datetime
-        step_state = {
-            "step": step,
-            "status": status,
-            "started_at": datetime.utcnow().isoformat() if status == "RUNNING" else None,
-            "completed_at": datetime.utcnow().isoformat() if status == "COMPLETED" else None,
-            "error_message": error_message,
-            "result": result
-        }
-        
-        project["step_state"] = step_state
-        return self.update_project(project_id, project)
-    
-    def get_step_state(self, project_id: str) -> Optional[Dict[str, Any]]:
-        """Get current step state for a project (DEPRECATED - use get_step_states)"""
-        project = self.get_project(project_id)
-        if not project:
-            return None
-        return project.get("step_state")
-    
     def get_step_states(self, project_id: str) -> Dict[str, Any]:
         """Get all step states for a project"""
         project = self.get_project(project_id)
         if not project:
             return {}
         return project.get("step_states", {})
-    
+
     def atomic_transition_to_running(self, project_id: str, step: str) -> Dict[str, Any]:
         """Atomically check conditions and transition step to RUNNING (single lock)"""
         def _transition():

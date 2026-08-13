@@ -229,20 +229,3 @@ class GeminiClient:
         except Exception as e:
             logger.error(f"Image generation failed: {e}")
             raise Exception(f"Image generation failed. Error: {str(e)}")
-
-    def extract_image_from_interaction(self, interaction: Any) -> Optional[Any]:
-        """
-        Extract image from an interaction response
-
-        Args:
-            interaction: Gemini interaction object
-
-        Returns:
-            Image part if found, None otherwise
-        """
-        for step in reversed(interaction.steps):
-            if step.type == "model_output" and step.content:
-                for content in reversed(step.content):
-                    if content.type == "image":
-                        return content
-        return None
