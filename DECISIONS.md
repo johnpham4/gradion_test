@@ -12,9 +12,9 @@ My decision to use FastAPI instead of Express was driven by the Python-based Gem
 
 ## JSON File Storage over Database
 
-I chose JSON file storage with file-based write locking instead of a traditional database. For the single-user assessment scope, a full database adds overhead without meaningful benefits. JSON files provide sufficient persistence, are easier to debug, and eliminate external dependencies. The cons accepted include manual write locking implementation and no query capabilities. The state isolation per user/project is handled through directory structure, and concurrent writes are prevented using fcntl-based file locking.
+I chose JSON file storage instead of a traditional database. For the single-user assessment scope, a full database adds overhead without meaningful benefits. JSON files provide sufficient persistence, are easier to debug, and eliminate external dependencies. The cons accepted include no query capabilities and no cross-process durability guarantees. State is isolated per user/project through directory structure, and concurrent writes to the same project are guarded by a per-resource in-process lock (`threading.RLock`) wrapped around every atomic state transition. The app runs as a single uvicorn worker, so an in-process lock is enough to satisfy the no-duplicate-calls rule — the lock is held across the RUNNING check so two concurrent triggers of the same step can't both pass.
 
-**AI suggestion:** AI recommended PostgreSQL for robustness and future scalability. I overrode this because the assessment specifically allows JSON storage "if done properly," and a database would be over-engineering for this scope.
+**AI suggestion:** AI recommended PostgreSQL for robustness and future scalability. I overrode this because the assessment explicitly allows JSON storage "if done properly," and a database would be over-engineering for this scope. I also caught the AI stubbing out the locking entirely at one point (with a comment saying it was "simpler" for the assessment) — that directly violates §4.3's no-duplicate-calls requirement, so I restored it and used a reentrant lock so `add_project_to_user` → `update_user` can't deadlock.
 
 ## Polling over WebSockets
 
@@ -45,6 +45,18 @@ I chose a Makefile instead of separate shell scripts for development commands. M
 I chose pyproject.toml for Python dependency management instead of requirements.txt. This is the modern Python standard, provides better metadata management, and integrates well with setuptools for editable installs. It also allows defining development dependencies separately from production ones.
 
 **AI suggestion:** AI suggested requirements.txt for simplicity. I pushed back because pyproject.toml is the modern standard and provides better project structure and dependency management.
+
+## Gemini Image Generation: Paid-Only, So Mock Is the Default
+
+The assessment requires "real calls to a current Gemini image model (Nano Banana family)" — §5.3 is explicit about it. However, as of 2026 **every current Gemini image model is paid-only**. The official pricing page (`ai.google.dev/gemini-api/docs/pricing`) lists `gemini-3.1-flash-lite-image` (Nano Banana 2 Lite) as having **no free tier** (paid: $0.25 input / $30.00 per 1M output tokens → ~$0.034 per image); `gemini-2.5-flash-image` and the rest of the 2.5 family moved to paid-only in April 2026. Only the text model (`gemini-3.6-flash`) is free. I verified the text path works with a real key (live `interactions.create` returned "OK").
+
+Decision: `IMAGE_PROVIDER=mock` is the **default** so the app runs out of the box at zero cost, with `IMAGE_PROVIDER=gemini` as a documented opt-in (billing required) that makes real Nano Banana calls using the exact notebook pipeline. The mock client (`MockImageClient`) keeps the identical interface (context seed + chained generations) and writes placeholder PNGs to `data/mock_images/`; real Gemini images are saved to `data/images/{project_id}/` via `_save_image`. If a free image tier appears later, flipping `IMAGE_PROVIDER=gemini` is all that's needed.
+
+**AI suggestion:** The AI previously went mock-only and claimed image generation was unusable — and in that working-tree revision it silently stopped attaching the uploaded book to Gemini at all (STYLE never sent the book; CHARACTERS/CHAPTERS re-sent `book_text[:5000]` every step instead of chaining). I caught that regression by reading the diff, restored the notebook's interactions-chaining pipeline, and kept the mock client only as an explicit fallback. The real integration remains the deliverable; the mock is the safety net, not a replacement for the chaining logic.
+
+## Each Step Returns Its Result on Completion
+
+The user asked whether each step should return its result when run. Yes — every step writes its output to `step_states[STEP].result` as soon as it's produced (style string, character/chapter arrays, portrait/illustration objects with file paths), and `trigger_step`/`retry_step` return the final `{status, result}`. During execution the frontend polls `/projects/{id}` and renders each step's result under that step (including partial portrait/illustration lists while the rest are still generating). To keep the event loop free during long Gemini calls, `trigger_step`/`retry_step` are declared as sync handlers so FastAPI runs them in a threadpool — otherwise the 10-30s synchronous Gemini call would block the loop and freeze the status polls the UI depends on.
 
 ---
 

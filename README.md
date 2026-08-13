@@ -16,7 +16,7 @@ A web application that transforms book text into character portraits and chapter
 
 - Node.js 18+ and npm
 - Python 3.9+
-- Gemini API key
+- Gemini API key (free tier is enough for the text pipeline; image models are paid-only — see [DECISIONS.md](DECISIONS.md))
 
 ### Setup
 
@@ -47,6 +47,18 @@ A web application that transforms book text into character portraits and chapter
    make dev-backend  # Terminal 1
    make dev-frontend # Terminal 2
    ```
+
+### Image Generation
+
+Image generation uses **mock** mode by default - local placeholder images, zero API cost. This is because every current Gemini image model is paid-only (no free tier), so the app works out of the box; the text pipeline (style, characters, chapters) always uses real Gemini calls with the free tier.
+
+To switch providers, set `IMAGE_PROVIDER` in `backend/.env`:
+```bash
+IMAGE_PROVIDER=mock   # Default - local placeholder images, no cost
+IMAGE_PROVIDER=gemini # Real Gemini Nano Banana calls (billing required)
+```
+
+`IMAGE_PROVIDER=gemini` uses `gemini-3.1-flash-lite-image` via the same notebook-faithful pipeline (context-seeded, interaction-chained) so characters stay consistent across portraits and illustrations.
 
 ### Run Tests
 
@@ -80,7 +92,6 @@ gradion/
 │   └── locks/       # Write locks
 ├── README.md
 ├── DECISIONS.md     # Technical decisions
-├── TESTING.md       # Testing strategy
 └── .env.example     # Environment variables template
 ```
 
